@@ -1,0 +1,67 @@
+/* Diff and review: expanded context between hunks, opening lines in the editor, image diffs, blame back in time. */
+
+/* unchanged lines revealed between hunks, and the bars that reveal them */
+.diff-gap-block { margin: 10px 12px 0; border: 1px dashed var(--border); border-radius: 4px; overflow: clip; }
+.diff-gap-block .dl.context { color: var(--text-secondary); }
+.diff-expander {
+  display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px; background: var(--bg-panel-2); color: var(--text-secondary);
+  font-family: var(--font-ui); font-size: 11px;
+}
+.diff-expander + .dl, .dl + .diff-expander, .split + .diff-expander, .diff-expander + .split { border-top: 1px solid var(--border); }
+.diff-expander .count { flex: 1; padding-left: 4px; }
+.diff-expander button {
+  display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 6px; border: none; border-radius: 3px; background: transparent;
+  color: var(--text-secondary); font-size: 11px; cursor: pointer;
+}
+.diff-expander button:hover { background: var(--bg-hover); color: var(--text); }
+
+/* line numbers that open the editor (diffs without line selection) */
+.dl.opens .ln { cursor: pointer; }
+.dl.opens .ln:hover { color: var(--text-accent); text-decoration: underline; }
+
+/* image diff */
+.image-diff { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 100%; }
+.img-toolbar { display: flex; align-items: center; gap: 12px; font-size: 12px; flex-wrap: wrap; }
+.img-amount { width: 180px; }
+.img-badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 9px; border: 1px solid currentColor; }
+.img-badge.added { color: var(--success); }
+.img-badge.deleted { color: var(--danger); }
+.img-panes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: start; }
+.img-pane { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.img-pane figcaption { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
+.img-label { font-weight: 600; }
+.img-pane.old .img-frame { border-color: color-mix(in srgb, var(--danger) 60%, var(--border)); }
+.img-pane.cur .img-frame { border-color: color-mix(in srgb, var(--success) 60%, var(--border)); }
+.img-frame { border: 1px solid var(--border); border-radius: 4px; padding: 8px; display: flex; justify-content: center; }
+.img-frame img { max-width: 100%; height: auto; display: block; image-rendering: auto; }
+.checker {
+  background-color: var(--bg-panel);
+  background-image: conic-gradient(var(--bg-hover) 25%, transparent 0 50%, var(--bg-hover) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+.img-stack-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.img-stack { position: relative; max-width: 100%; min-width: 40px; min-height: 40px; border: 1px solid var(--border); user-select: none; }
+.img-stack.swipe { cursor: ew-resize; touch-action: none; }
+.img-stack img { position: absolute; top: 0; left: 0; display: block; height: auto; }
+.img-stack img:first-child { position: relative; }
+.img-divider { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); pointer-events: none; }
+.img-divider::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 12px; height: 24px; transform: translate(-50%, -50%); border-radius: 6px;
+  background: var(--accent);
+}
+.img-stack-legend { font-size: 11px; }
+
+/* blame: going back in time */
+.blame-crumbs {
+  display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--border); font-size: 12px; flex-wrap: wrap;
+  position: sticky; top: 0; z-index: 2; background: var(--bg-panel);
+}
+.blame-crumbs button { border: none; background: transparent; padding: 2px 6px; border-radius: 4px; color: var(--text-accent); cursor: pointer; font-size: 12px; }
+.blame-crumbs button:hover { background: var(--bg-hover); }
+.blame-crumbs .current { padding: 2px 6px; font-weight: 600; }
+.blame-crumbs .sep { color: var(--text-disabled); }
+.blame-crumbs .mono { font-family: var(--font-mono); font-size: 11px; }
+.blame-row.target { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.blame-gutter .back { flex: none; color: var(--text-disabled); }
+.blame-gutter:hover .back { color: var(--text-accent); }
+.history-item .renamed { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

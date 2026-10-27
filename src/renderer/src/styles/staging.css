@@ -1,0 +1,51 @@
+/* Staging and committing: keyboard hunk focus and the hunk editor in the diff view, the commit composer's lint,
+   Conventional Commits pickers, history and co-author tools, the signature badge and the split commit dialog. */
+
+/* diff: hunk the keyboard acts on */
+.diff-hunk.focused { border-color: color-mix(in srgb, var(--accent) 70%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.diff-hunk.focused .hunk-head { color: var(--text); }
+.hunk-editor { width: 100%; min-height: 160px; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 18px; white-space: pre; tab-size: 4; }
+
+/* composer */
+.composer-summary .counter.near { color: color-mix(in srgb, var(--warning) 60%, var(--text-disabled)); }
+.composer-cc { display: flex; gap: 6px; }
+.composer-cc select { flex: none; width: 96px; }
+.composer-cc input { flex: 1; min-width: 0; }
+.composer-lint { display: flex; flex-direction: column; gap: 2px; margin-top: -4px; font-size: 11px; color: var(--warning); }
+.composer-lint span { display: inline-flex; align-items: center; gap: 5px; }
+.composer-tools { position: relative; display: flex; gap: 4px; margin-top: -4px; }
+.composer-tools .btn { display: inline-flex; align-items: center; gap: 5px; color: var(--text-secondary); }
+.composer-opts { flex-wrap: wrap; row-gap: 4px; }
+
+/* co-author picker: opens upwards over the composer */
+.coauthor-picker {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; gap: 4px; padding: 6px;
+  background: var(--bg-panel-3); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: var(--shadow-menu);
+}
+.coauthor-picker input { width: 100%; }
+.coauthor-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; }
+.coauthor-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 8px; align-items: center; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.coauthor-row.active { background: var(--accent); color: var(--on-accent); }
+.coauthor-row.active .muted { color: inherit; opacity: 0.8; }
+.coauthor-row .count { font-size: 11px; color: var(--text-disabled); font-variant-numeric: tabular-nums; }
+.coauthor-row.active .count { color: inherit; }
+.coauthor-empty { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; color: var(--text-secondary); }
+
+/* commit signature badge */
+.sig-badge { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; border-radius: 9px; font-size: 11px; border: 1px solid currentColor; white-space: nowrap; }
+.sig-badge.good { color: var(--success); }
+.sig-badge.warn { color: var(--warning); }
+.sig-badge.bad { color: var(--danger); }
+.sig-badge.muted { color: var(--text-secondary); }
+
+/* split commit */
+.split-group { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; gap: 6px; }
+.split-group.off { opacity: 0.65; }
+.split-group textarea { resize: vertical; font-family: var(--font-mono); font-size: 12px; }
+.split-units { display: flex; flex-direction: column; gap: 2px; }
+.split-unit { display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
+.split-unit-path { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 11.5px; }
+.split-unit select { flex: none; font-size: 11px; height: 22px; padding: 0 4px; }
+
+/* keyboard shortcuts dialog */
+.kb-table .kb-section { text-align: left; padding: 14px 8px 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); border-bottom: 1px solid var(--border); }

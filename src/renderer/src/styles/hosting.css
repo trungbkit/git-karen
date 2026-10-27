@@ -1,0 +1,57 @@
+/* Hosting integration (plan 07): CI badges, issue links, the pull request list and settings */
+
+.ci-badge { display: inline-flex; align-items: center; margin-left: 6px; vertical-align: middle; cursor: default; }
+.ci-icon { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; flex: none; color: var(--text-inverse); }
+.ci-icon.ci-success { background: var(--success); }
+.ci-icon.ci-failure { background: var(--danger); }
+.ci-icon.ci-neutral { background: var(--text-disabled); }
+.ci-icon.ci-pending { background: transparent; border: 1.5px solid var(--warning); }
+.ci-icon.ci-pending .ci-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--warning); animation: ci-pulse 1.2s ease-in-out infinite; }
+.ci-icon.ci-neutral .ci-dot { width: 4px; height: 1.5px; background: var(--text-inverse); }
+@keyframes ci-pulse { 50% { opacity: 0.25; } }
+
+.ci-card {
+  position: fixed; z-index: 1000; min-width: 200px; max-width: 420px; max-height: 320px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg-panel-2); border: 1px solid var(--border-strong); border-radius: 6px; box-shadow: var(--shadow-popover);
+  font-size: 12px; color: var(--text);
+}
+.ci-card-head { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.ci-card-list { display: flex; flex-direction: column; gap: 3px; overflow: auto; }
+.ci-card-row { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.ci-card-row a { color: var(--text-accent); text-decoration: none; }
+.ci-card-row a:hover { text-decoration: underline; }
+.ci-card-desc { color: var(--text-secondary); min-width: 0; }
+
+.issue-link { color: var(--text-accent); text-decoration: none; cursor: pointer; }
+.issue-link:hover { text-decoration: underline; }
+
+/* left panel: pull requests */
+.lp-pr-group { padding: 4px 10px 2px 24px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-disabled); display: flex; gap: 6px; }
+.lp-pr { align-items: center; }
+.lp-pr .lp-pr-num { color: var(--text-secondary); font-variant-numeric: tabular-nums; flex: none; }
+.lp-pr .lp-pr-draft { font-size: 10px; padding: 0 5px; border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text-secondary); flex: none; }
+.lp-pr .lp-pr-author { color: var(--text-disabled); font-size: 11px; flex: none; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+.lp-pr-msg { padding: 4px 10px 6px 24px; font-size: 11px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.lp-pr-msg.error { color: var(--danger); }
+
+/* preferences: integrations */
+.int-account { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.int-account-head { display: flex; align-items: center; gap: 8px; }
+.int-account-head .host { font-weight: 600; }
+.int-account-head .status { margin-left: auto; font-size: 11px; color: var(--text-secondary); }
+.int-account-head .status.ok { color: var(--success); }
+.int-row { display: flex; gap: 6px; align-items: center; }
+.int-row input, .int-row select { flex: 1; min-width: 0; }
+.int-rule { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 4px; }
+.int-preview { font-size: 12px; padding: 4px 0; overflow-wrap: anywhere; }
+
+/* create pull request modal */
+.cpr { display: flex; flex-direction: column; gap: 10px; }
+.cpr textarea { min-height: 140px; resize: vertical; font-family: var(--font-ui); }
+.cpr .cpr-branches { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: end; }
+.cpr .cpr-arrow { padding-bottom: 6px; color: var(--text-secondary); }
+.cpr .cpr-commits { font-size: 11px; color: var(--text-secondary); }
+
+.g-msg .ci-badge { margin: 0 6px 0 0; }
+.lp-section-header .spin { animation: hosting-spin 0.9s linear infinite; }
+@keyframes hosting-spin { to { transform: rotate(360deg); } }

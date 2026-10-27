@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2B2735"/>
+      <stop offset="1" stop-color="#17151D"/>
+    </linearGradient>
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="320" y1="240" x2="720" y2="784">
+      <stop offset="0" stop-color="#FFB547"/>
+      <stop offset="1" stop-color="#FF5E62"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="3"/>
+  <g fill="none" stroke="url(#ink)" stroke-width="60" stroke-linecap="round">
+    <path d="M400 300 V724"/>
+    <path d="M400 512 C470 440 560 360 640 300"/>
+    <path d="M400 512 C470 584 560 664 640 724"/>
+  </g>
+  <g fill="#1F1C27" stroke="url(#ink)" stroke-width="40">
+    <circle cx="400" cy="300" r="54"/>
+    <circle cx="640" cy="300" r="54"/>
+    <circle cx="640" cy="724" r="54"/>
+    <circle cx="400" cy="724" r="54"/>
+  </g>
+  <circle cx="400" cy="512" r="74" fill="url(#ink)"/>
+</svg>

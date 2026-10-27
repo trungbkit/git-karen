@@ -1,0 +1,287 @@
+/* Design tokens. Components must only use these variables, never raw colors.
+   Themes: dark (default), light, nord, solarized; ui/appearance.ts sets data-theme, data-scheme (dark/light),
+   data-density, --row-h and, for a custom accent, the accent variables inline on <html>. */
+:root {
+  --bg-app: #16181d;
+  --bg-toolbar: #1f2229;
+  --bg-panel: #1c1f25;
+  --bg-panel-2: #23262e;
+  --bg-panel-3: #2b2f38;
+  --bg-input: rgba(0, 0, 0, 0.25);
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-selected: rgba(94, 145, 255, 0.22);
+  --bg-selected-strong: rgba(94, 145, 255, 0.38);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --overlay: rgba(0, 0, 0, 0.55);
+
+  --text: rgba(255, 255, 255, 0.88);
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-disabled: rgba(255, 255, 255, 0.38);
+  --text-accent: #8fb0ff;
+  --text-inverse: #16181d;
+
+  --accent: #5e91ff;
+  /* text and icons on a solid accent / status colour fill */
+  --on-accent: #ffffff;
+  --on-solid: #ffffff;
+  --success: #4fbf72;
+  --warning: #e3a33b;
+  --danger: #e5534b;
+  --info: #4fb8d9;
+
+  --diff-add-bg: rgba(79, 191, 114, 0.14);
+  --diff-add-strong: rgba(79, 191, 114, 0.32);
+  --diff-del-bg: rgba(229, 83, 75, 0.14);
+  --diff-del-strong: rgba(229, 83, 75, 0.32);
+  --diff-meta-bg: rgba(94, 145, 255, 0.1);
+
+  /* Lane colours for the commit graph (index = lane % 10) */
+  --lane-0: #15a0bf;
+  --lane-1: #0669f7;
+  --lane-2: #8e00c2;
+  --lane-3: #c517b6;
+  --lane-4: #d90171;
+  --lane-5: #cd0101;
+  --lane-6: #f25d2e;
+  --lane-7: #f2ca33;
+  --lane-8: #7bd938;
+  --lane-9: #2ece9d;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-size: 13px;
+  --radius: 6px;
+  /* graph and file list rows; the left panel uses 4px less (density preference) */
+  --row-h: 28px;
+  --focus-ring: 0 0 0 2px var(--accent);
+  --shadow-popover: 0 6px 20px rgb(0 0 0 / 0.3);
+  --shadow-menu: 0 10px 30px rgb(0 0 0 / 0.45);
+  --shadow-modal: 0 20px 60px rgb(0 0 0 / 0.5);
+  /* graph "Changes" column bars */
+  --stats-added: #347d39;
+  --stats-deleted: #c93c37;
+  /* Built-in terminal (ANSI palette) */
+  --term-bg: #121418;
+  --term-fg: #d7dae0;
+  --term-cursor: #8fb0ff;
+  --term-selection: rgba(94, 145, 255, 0.35);
+  --term-black: #2a2e36;
+  --term-red: #ef6b73;
+  --term-green: #8bd17c;
+  --term-yellow: #e9c46a;
+  --term-blue: #6fa3ff;
+  --term-magenta: #c792ea;
+  --term-cyan: #5ccfe6;
+  --term-white: #c8ccd4;
+  --term-bright-black: #5c6370;
+  --term-bright-red: #ff8b92;
+  --term-bright-green: #a7e39a;
+  --term-bright-yellow: #f6d88f;
+  --term-bright-blue: #92bbff;
+  --term-bright-magenta: #dcb0f5;
+  --term-bright-cyan: #86e1f0;
+  --term-bright-white: #ffffff;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg-app: #f3f4f7;
+  --bg-toolbar: #e9ebf0;
+  --bg-panel: #ffffff;
+  --bg-panel-2: #f6f7f9;
+  --bg-panel-3: #eceef2;
+  --bg-input: rgba(0, 0, 0, 0.05);
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-selected: rgba(46, 104, 230, 0.14);
+  --bg-selected-strong: rgba(46, 104, 230, 0.26);
+  --border: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.18);
+  --overlay: rgba(20, 22, 28, 0.4);
+
+  --text: rgba(0, 0, 0, 0.86);
+  --text-secondary: rgba(0, 0, 0, 0.58);
+  --text-disabled: rgba(0, 0, 0, 0.36);
+  --text-accent: #2e68e6;
+  --text-inverse: #ffffff;
+
+  --accent: #2e68e6;
+  --success: #23914a;
+  --warning: #b8760f;
+  --danger: #c93a32;
+  --info: #1a8bb0;
+
+  --diff-add-bg: rgba(35, 145, 74, 0.1);
+  --diff-add-strong: rgba(35, 145, 74, 0.24);
+  --diff-del-bg: rgba(201, 58, 50, 0.1);
+  --diff-del-strong: rgba(201, 58, 50, 0.24);
+  --diff-meta-bg: rgba(46, 104, 230, 0.07);
+  --shadow-popover: 0 6px 20px rgb(0 0 0 / 0.14);
+  --shadow-menu: 0 10px 30px rgb(0 0 0 / 0.18);
+  --shadow-modal: 0 20px 60px rgb(0 0 0 / 0.25);
+  --stats-added: #4ea85a;
+  --stats-deleted: #d9534f;
+  --term-bg: #fbfbfc;
+  --term-fg: #2b2f36;
+  --term-cursor: #2e68e6;
+  --term-selection: rgba(46, 104, 230, 0.22);
+  --term-black: #2b2f36;
+  --term-red: #c93a32;
+  --term-green: #23864a;
+  --term-yellow: #a66a00;
+  --term-blue: #2e68e6;
+  --term-magenta: #9a3fc4;
+  --term-cyan: #0f8299;
+  --term-white: #8a8f98;
+  --term-bright-black: #5c6370;
+  --term-bright-red: #e0544b;
+  --term-bright-green: #2ea35b;
+  --term-bright-yellow: #c58a12;
+  --term-bright-blue: #4f86f7;
+  --term-bright-magenta: #b45ad8;
+  --term-bright-cyan: #1aa0b8;
+  --term-bright-white: #3a3f47;
+  color-scheme: light;
+}
+
+/* Nord (nordtheme.com): polar night backgrounds, snow storm text, frost accent, aurora status colours. */
+:root[data-theme='nord'] {
+  --bg-app: #2a303b;
+  --bg-toolbar: #323946;
+  --bg-panel: #2e3440;
+  --bg-panel-2: #353c4a;
+  --bg-panel-3: #3b4252;
+  --bg-input: rgba(0, 0, 0, 0.18);
+  --bg-hover: rgba(216, 222, 233, 0.06);
+  --bg-selected: rgba(136, 192, 208, 0.2);
+  --bg-selected-strong: rgba(136, 192, 208, 0.34);
+  --border: rgba(216, 222, 233, 0.09);
+  --border-strong: rgba(216, 222, 233, 0.18);
+  --overlay: rgba(20, 24, 31, 0.6);
+
+  --text: #e5e9f0;
+  --text-secondary: rgba(216, 222, 233, 0.66);
+  --text-disabled: rgba(216, 222, 233, 0.4);
+  --text-accent: #8fbcbb;
+  --text-inverse: #2e3440;
+
+  --accent: #88c0d0;
+  --on-accent: #2e3440;
+  --success: #a3be8c;
+  --warning: #ebcb8b;
+  --danger: #bf616a;
+  --info: #81a1c1;
+
+  --diff-add-bg: rgba(163, 190, 140, 0.14);
+  --diff-add-strong: rgba(163, 190, 140, 0.3);
+  --diff-del-bg: rgba(191, 97, 106, 0.16);
+  --diff-del-strong: rgba(191, 97, 106, 0.34);
+  --diff-meta-bg: rgba(129, 161, 193, 0.12);
+  --stats-added: #8aa676;
+  --stats-deleted: #b05a63;
+
+  --lane-0: #88c0d0;
+  --lane-1: #5e81ac;
+  --lane-2: #b48ead;
+  --lane-3: #bf616a;
+  --lane-4: #d08770;
+  --lane-5: #ebcb8b;
+  --lane-6: #a3be8c;
+  --lane-7: #8fbcbb;
+  --lane-8: #81a1c1;
+  --lane-9: #d8a6c8;
+
+  --term-bg: #2a303b;
+  --term-fg: #d8dee9;
+  --term-cursor: #88c0d0;
+  --term-selection: rgba(136, 192, 208, 0.3);
+  --term-black: #3b4252;
+  --term-red: #bf616a;
+  --term-green: #a3be8c;
+  --term-yellow: #ebcb8b;
+  --term-blue: #81a1c1;
+  --term-magenta: #b48ead;
+  --term-cyan: #88c0d0;
+  --term-white: #e5e9f0;
+  --term-bright-black: #4c566a;
+  --term-bright-red: #d06f79;
+  --term-bright-green: #b1d196;
+  --term-bright-yellow: #f0d399;
+  --term-bright-blue: #8cafd2;
+  --term-bright-magenta: #c895bf;
+  --term-bright-cyan: #93ccdc;
+  --term-bright-white: #eceff4;
+  color-scheme: dark;
+}
+
+/* Solarized Light (ethanschoonover.com/solarized): base3/base2 backgrounds, base00/base01 text. */
+:root[data-theme='solarized'] {
+  --bg-app: #eee8d5;
+  --bg-toolbar: #e9e2cc;
+  --bg-panel: #fdf6e3;
+  --bg-panel-2: #f7f0dc;
+  --bg-panel-3: #eee8d5;
+  --bg-input: rgba(88, 110, 117, 0.07);
+  --bg-hover: rgba(88, 110, 117, 0.07);
+  --bg-selected: rgba(38, 139, 210, 0.15);
+  --bg-selected-strong: rgba(38, 139, 210, 0.27);
+  --border: rgba(88, 110, 117, 0.16);
+  --border-strong: rgba(88, 110, 117, 0.3);
+  --overlay: rgba(0, 43, 54, 0.35);
+
+  --text: #073642;
+  --text-secondary: #586e75;
+  --text-disabled: #93a1a1;
+  --text-accent: #268bd2;
+  --text-inverse: #fdf6e3;
+
+  --accent: #268bd2;
+  --success: #859900;
+  --warning: #b58900;
+  --danger: #dc322f;
+  --info: #2aa198;
+
+  --diff-add-bg: rgba(133, 153, 0, 0.12);
+  --diff-add-strong: rgba(133, 153, 0, 0.26);
+  --diff-del-bg: rgba(220, 50, 47, 0.1);
+  --diff-del-strong: rgba(220, 50, 47, 0.22);
+  --diff-meta-bg: rgba(38, 139, 210, 0.08);
+  --shadow-popover: 0 6px 20px rgb(0 43 54 / 0.14);
+  --shadow-menu: 0 10px 30px rgb(0 43 54 / 0.18);
+  --shadow-modal: 0 20px 60px rgb(0 43 54 / 0.25);
+  --stats-added: #859900;
+  --stats-deleted: #dc322f;
+
+  --lane-0: #2aa198;
+  --lane-1: #268bd2;
+  --lane-2: #6c71c4;
+  --lane-3: #d33682;
+  --lane-4: #dc322f;
+  --lane-5: #cb4b16;
+  --lane-6: #b58900;
+  --lane-7: #859900;
+  --lane-8: #1f7a8c;
+  --lane-9: #8a6fb5;
+
+  --term-bg: #fdf6e3;
+  --term-fg: #657b83;
+  --term-cursor: #268bd2;
+  --term-selection: rgba(38, 139, 210, 0.2);
+  --term-black: #073642;
+  --term-red: #dc322f;
+  --term-green: #859900;
+  --term-yellow: #b58900;
+  --term-blue: #268bd2;
+  --term-magenta: #d33682;
+  --term-cyan: #2aa198;
+  --term-white: #eee8d5;
+  --term-bright-black: #002b36;
+  --term-bright-red: #cb4b16;
+  --term-bright-green: #586e75;
+  --term-bright-yellow: #657b83;
+  --term-bright-blue: #839496;
+  --term-bright-magenta: #6c71c4;
+  --term-bright-cyan: #93a1a1;
+  --term-bright-white: #fdf6e3;
+  color-scheme: light;
+}

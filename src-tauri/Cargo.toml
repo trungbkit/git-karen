@@ -1,0 +1,53 @@
+[package]
+name = "karen"
+version = "0.1.0"
+description = "A local-first desktop Git client"
+license = "MIT"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "karen_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+# `karen [path]` hands its path to the running app; karen:// links
+tauri-plugin-single-instance = "2"
+tauri-plugin-deep-link = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time"] }
+notify = "8"
+portable-pty = "0.9"
+regex = "1"
+tempfile = "3"
+# hosting integration tokens live in the OS keychain (platform backends enabled per target below)
+keyring = "3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSGeometry", "NSNotification", "NSObject", "NSOperation", "NSString"] }
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
+
+# Stripped proc-macro dylibs fail to dlopen on recent macOS ("mis-aligned LINKEDIT string pool").
+[profile.release.build-override]
+strip = false
