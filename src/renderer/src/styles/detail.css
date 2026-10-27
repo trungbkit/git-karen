@@ -275,6 +275,13 @@
 .ai-secret { display: flex; gap: 6px; }
 .ai-secret input { flex: 1; }
 .ai-test { display: flex; gap: 10px; align-items: center; font-size: 12px; }
+.ai-setup { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-panel); }
+.ai-setup-head { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.ai-setup-head .grow { flex: 1; }
+.ai-setup-head svg { color: var(--text-accent); flex: none; }
+.ai-setup .seg { align-self: flex-start; flex-wrap: wrap; }
+.ai-setup .smart-link { display: inline-flex; gap: 3px; padding: 0 2px; height: auto; font-size: inherit; vertical-align: baseline; }
+.ai-secret-row { display: flex; flex-direction: column; gap: 4px; }
 
 /* smart commit */
 .smart-head { display: flex; align-items: center; gap: 6px; }

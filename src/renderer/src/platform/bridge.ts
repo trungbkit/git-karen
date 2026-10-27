@@ -118,7 +118,8 @@ const aiCall = <T>(method: string, ...args: unknown[]) => call<T>('ai_call', { m
 const ai: AiApi = {
   status: () => aiCall('status'),
   update: (settings, secrets) => aiCall('update', settings ?? null, secrets ?? null),
-  complete: (prompt, maxTokens) => aiCall('complete', prompt, maxTokens ?? null)
+  complete: (prompt, maxTokens) => aiCall('complete', prompt, maxTokens ?? null),
+  verify: (credential, secret) => aiCall('verify', credential, secret ?? null)
 }
 
 type TermEvent = { kind: 'data'; data: string } | { kind: 'exit'; code: number }

@@ -275,7 +275,14 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
       const message = await generateCommitMessage(repo.path, nothingStaged)
       setDraft(splitMessage(message))
     } catch (e) {
-      useStore.getState().toast({ kind: 'error', title: 'Could not write a commit message', message: (e as Error).message })
+      const { toast, setModal } = useStore.getState()
+      const unset = await window.ai.status().then((s) => !s.active, () => false)
+      toast({
+        kind: 'error',
+        title: 'Could not write a commit message',
+        message: (e as Error).message,
+        action: unset ? { label: 'Set up AI', run: () => setModal({ kind: 'preferences', section: 'ai' }) } : undefined
+      })
     } finally {
       setGenerating(false)
     }

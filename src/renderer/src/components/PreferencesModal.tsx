@@ -2,9 +2,12 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { DEFAULT_PREFERENCES, type AiCredential, type AiSettings, type AiStatus, type Preferences } from '@shared/types'
 import { useStore } from '../state/store'
 import { Modal } from '../ui/Modal'
+import { Icon } from '../ui/Icon'
 import { IntegrationsSettings } from './IntegrationsSettings'
 import { CliSettings } from './CliSettings'
+import { AiQuickSetup } from './AiQuickSetup'
 import { ACCENT_PRESETS, parseHex, THEMES } from '../ui/appearance'
+import { AI_CREDENTIALS, credentialInfo, keyProblem, PROVIDER_LABELS } from '../smart/aiKeys'
 import '../styles/detail.css'
 
 type Section = 'general' | 'ui' | 'tools' | 'ai' | 'identity' | 'integrations'
@@ -29,16 +32,8 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-const CREDENTIALS: { id: AiCredential; label: string; hint?: string }[] = [
-  { id: 'anthropicOauthToken', label: 'Claude OAuth token', hint: 'Subscription billing. Create one with `claude setup-token`.' },
-  { id: 'anthropicApiKey', label: 'Anthropic API key' },
-  { id: 'openaiApiKey', label: 'OpenAI API key' },
-  { id: 'geminiApiKey', label: 'Gemini API key' }
-]
 /** `#abc` as `#aabbcc` (the colour input only takes the long form). */
 const normalizeHex = (c: string) => `#${parseHex(c)!.map((v) => v.toString(16).padStart(2, '0')).join('')}`
-
-const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini' } as const
 
 interface Identity {
   name: string
@@ -64,6 +59,7 @@ export function PreferencesModal() {
   /** Typed keys (string) and keys to remove (null); absent = unchanged */
   const [secrets, setSecrets] = useState<Partial<Record<AiCredential, string | null>>>({})
   const [aiTest, setAiTest] = useState<{ state: 'running' | 'ok' | 'error'; message: string } | null>(null)
+  const [keyTests, setKeyTests] = useState<Partial<Record<AiCredential, { state: 'running' | 'ok' | 'error'; message: string }>>>({})
   const [globalId, setGlobalId] = useState<Identity>({ name: '', email: '' })
   const [repoId, setRepoId] = useState<Identity>({ name: '', email: '' })
   const [loadedIds, setLoadedIds] = useState<{ global: Identity; repo: Identity } | null>(null)
@@ -139,6 +135,17 @@ export function PreferencesModal() {
       setAiTest({ state: 'ok', message: `${PROVIDER_LABELS[status.active.provider]} (${status.active.model}) replied: ${reply.trim().slice(0, 60) || '(empty)'}` })
     } catch (e) {
       setAiTest({ state: 'error', message: (e as Error).message })
+    }
+  }
+
+  // the key as typed, or the saved or environment one; nothing is saved
+  const testKey = async (id: AiCredential) => {
+    setKeyTests((t) => ({ ...t, [id]: { state: 'running', message: 'Checking…' } }))
+    try {
+      const v = await window.ai.verify(id, secrets[id] || undefined)
+      setKeyTests((t) => ({ ...t, [id]: { state: 'ok', message: `Works: ${v.model} replied ${v.reply || '(empty)'}.` } }))
+    } catch (e) {
+      setKeyTests((t) => ({ ...t, [id]: { state: 'error', message: (e as Error).message } }))
     }
   }
 
@@ -359,9 +366,18 @@ export function PreferencesModal() {
             <>
               <span className={ai.active ? 'hint' : 'field-warning'}>
                 {ai.active
-                  ? `AI requests go to ${PROVIDER_LABELS[ai.active.provider]} (${ai.active.model}) with the ${CREDENTIALS.find((c) => c.id === ai.active!.credential)?.label}. Your diffs are sent to that provider.`
+                  ? `AI requests go to ${PROVIDER_LABELS[ai.active.provider]} (${ai.active.model}) with the ${credentialInfo(ai.active.credential).label}. Your diffs are sent to that provider.`
                   : 'No AI provider is set up: commit messages are yours to write and PR texts fall back to the commit subjects.'}
               </span>
+              {!ai.active && (
+                <AiQuickSetup
+                  why="for commit messages, pull request texts and split commits"
+                  onConnected={(s) => {
+                    setAi(s)
+                    setAiDraft((d) => (d ? { ...d, provider: s.settings.provider } : s.settings))
+                  }}
+                />
+              )}
               <Field label="Provider" hint="Automatic uses the first one with a credential: Claude, then OpenAI, then Gemini.">
                 <select value={aiDraft.provider} onChange={(e) => setAiSetting('provider', e.target.value as AiSettings['provider'])}>
                   <option value="auto">Automatic</option>
@@ -375,9 +391,12 @@ export function PreferencesModal() {
                 Stored in a file only you can read and never shown again. Leave a field empty to use the environment variable (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY,
                 OPENAI_API_KEY, GEMINI_API_KEY), including ones exported from your shell profile.
               </span>
-              {CREDENTIALS.map((c) => {
+              {AI_CREDENTIALS.map((c) => {
                 const info = ai.secrets[c.id]
                 const cleared = secrets[c.id] === null
+                const typed = secrets[c.id] ?? ''
+                const problem = keyProblem(c.id, typed)
+                const test = keyTests[c.id]
                 const placeholder = cleared
                   ? 'Will be removed'
                   : info.source === 'app'
@@ -386,23 +405,43 @@ export function PreferencesModal() {
                       ? `From $${info.hint}`
                       : 'Not set'
                 return (
-                  <Field key={c.id} label={c.label} hint={c.hint}>
-                    <div className="ai-secret">
-                      <input
-                        type="password"
-                        autoComplete="off"
-                        spellCheck={false}
-                        value={secrets[c.id] ?? ''}
-                        placeholder={placeholder}
-                        onChange={(e) => setSecrets((s) => ({ ...s, [c.id]: e.target.value }))}
-                      />
-                      {info.source === 'app' && !cleared && (
-                        <button className="btn small" onClick={() => setSecrets((s) => ({ ...s, [c.id]: null }))}>
-                          Remove
+                  <div key={c.id} className="ai-secret-row">
+                    <Field label={c.label} hint={c.hint}>
+                      <div className="ai-secret">
+                        <input
+                          type="password"
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={typed}
+                          placeholder={placeholder}
+                          onChange={(e) => {
+                            setSecrets((s) => ({ ...s, [c.id]: e.target.value }))
+                            setKeyTests((t) => ({ ...t, [c.id]: undefined }))
+                          }}
+                        />
+                        <button
+                          className="btn small"
+                          disabled={test?.state === 'running' || cleared || (!typed.trim() && !info.source)}
+                          title="Send a tiny request with this key (nothing is saved)"
+                          onClick={() => void testKey(c.id)}
+                        >
+                          Test
                         </button>
-                      )}
-                    </div>
-                  </Field>
+                        {info.source === 'app' && !cleared && (
+                          <button className="btn small" onClick={() => setSecrets((s) => ({ ...s, [c.id]: null }))}>
+                            Remove
+                          </button>
+                        )}
+                        {c.keyUrl && (
+                          <button className="btn ghost small" title={c.keyUrl} onClick={() => void window.app.openExternal(c.keyUrl!)}>
+                            Get a key <Icon name="external" size={11} />
+                          </button>
+                        )}
+                      </div>
+                    </Field>
+                    {problem && <span className="field-warning">{problem}</span>}
+                    {test && <span className={test.state === 'error' ? 'field-error' : 'hint'}>{test.message}</span>}
+                  </div>
                 )
               })}
               <h3>Models</h3>

@@ -146,6 +146,7 @@ async fn ai_call(backend: State<'_, Backend>, method: String, args: Vec<Value>) 
             backend.ai.lock().unwrap().update(a.get(0)?, a.get(1)?)?;
             to_value(snapshot().status().await)
         }
+        "verify" => to_value(snapshot().verify(&a.get::<String>(0)?, a.get(1)?).await?),
         "complete" => {
             let resolved = snapshot().resolve().await?;
             to_value(ai::complete(&resolved, &a.get::<String>(0)?, a.get(1)?).await?)

@@ -10,10 +10,10 @@ import { commitSplit, execute, generateCommitMessage, prepare, proposeSplit, typ
 import { lintCommitMessage } from '../smart/message'
 import { offerUndo } from '../actions/undo'
 import { parseBranchList, SMART_STEPS, type SmartIntent, type SmartStep } from '../smart/text'
+import { PROVIDER_LABELS } from '../smart/aiKeys'
+import { AiQuickSetup } from './AiQuickSetup'
 import '../styles/detail.css'
 import '../styles/staging.css'
-
-const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini' } as const
 
 const STEP_LABELS: Record<SmartStep, string> = {
   stage: 'Stage all changes',
@@ -40,6 +40,8 @@ function SmartCommit({ repo, prOnly }: { repo: RepoTab; prOnly: boolean }) {
   const prefs = useStore((s) => s.prefs)
   const { setModal, setPrefs, updateRepo, refresh, toast } = useStore.getState()
   const [ai, setAi] = useState<AiStatus | null>(null)
+  /** The quick AI setup was closed with "Not now" */
+  const [aiDismissed, setAiDismissed] = useState(false)
   const [intent, setIntent] = useState<SmartIntent>({ stage: !prOnly, commit: !prOnly, push: true, pr: true })
   const [targetsText, setTargetsText] = useState(prefs.smartCommitTargets)
   const [mergeLocal, setMergeLocal] = useState(false)
@@ -148,8 +150,11 @@ function SmartCommit({ repo, prOnly }: { repo: RepoTab; prOnly: boolean }) {
           <Icon name="branch" size={13} /> <b>{branch ?? 'detached HEAD'}</b>
           {remote ? <span className="muted">→ {remote}</span> : <span className="field-warning">no remote</span>}
           <span className="grow" />
-          <AiBadge ai={ai} />
+          <AiBadge ai={ai} onSetup={() => setAiDismissed(false)} />
         </div>
+        {ai && !ai.active && !aiDismissed && (
+          <AiQuickSetup why="to write the commit message and pull request texts" onConnected={setAi} onDismiss={() => setAiDismissed(true)} />
+        )}
         <div className="field">
           <label>Pull request targets</label>
           <input value={targetsText} onChange={(e) => setTargetsText(e.target.value)} placeholder="uat,main" disabled={!intent.pr || running} />
@@ -329,12 +334,17 @@ function StepLog({ steps }: { steps: StepUpdate[] }) {
   )
 }
 
-function AiBadge({ ai }: { ai: AiStatus | null }) {
+/** `onSetup` shows the quick setup in place; without it the button opens Preferences > AI. */
+function AiBadge({ ai, onSetup }: { ai: AiStatus | null; onSetup?(): void }) {
   const setModal = useStore((s) => s.setModal)
   if (!ai) return null
   if (!ai.active)
     return (
-      <button className="btn ghost small field-warning" title="Without AI, the commit message is yours to write and PR texts come from the commit subjects" onClick={() => setModal({ kind: 'preferences', section: 'ai' })}>
+      <button
+        className="btn ghost small field-warning"
+        title="Without AI, the commit message is yours to write and PR texts come from the commit subjects"
+        onClick={() => (onSetup ? onSetup() : setModal({ kind: 'preferences', section: 'ai' }))}
+      >
         <Icon name="warning" size={11} /> No AI provider — set one up
       </button>
     )
@@ -356,6 +366,9 @@ interface EditableGroup {
 }
 
 type SplitPhase =
+  | { kind: 'checking' }
+  /** No provider: grouping waits for the quick setup */
+  | { kind: 'needsAi' }
   | { kind: 'analysing'; label: string }
   | { kind: 'error'; message: string }
   | { kind: 'review'; proposal: SplitProposal }
@@ -372,7 +385,7 @@ function SplitCommit({ repo }: { repo: RepoTab }) {
   const conventional = useStore((s) => s.prefs.conventionalCommits)
   const { setModal, updateRepo, refresh } = useStore.getState()
   const [ai, setAi] = useState<AiStatus | null>(null)
-  const [phase, setPhase] = useState<SplitPhase>({ kind: 'analysing', label: 'Starting' })
+  const [phase, setPhase] = useState<SplitPhase>({ kind: 'checking' })
   const [groups, setGroups] = useState<EditableGroup[]>([])
   /** Units in no group: they stay uncommitted */
   const [left, setLeft] = useState<string[]>([])
@@ -404,9 +417,17 @@ function SplitCommit({ repo }: { repo: RepoTab }) {
 
   useEffect(() => {
     alive.current = true
-    void window.ai.status().then((s) => alive.current && setAi(s), () => undefined)
-    if (!blocked) void analyse()
-    else setPhase({ kind: 'error', message: blocked })
+    if (blocked) setPhase({ kind: 'error', message: blocked })
+    void window.ai.status().then(
+      (s) => {
+        if (!alive.current) return
+        setAi(s)
+        if (blocked) return
+        if (s.active) void analyse()
+        else setPhase({ kind: 'needsAi' })
+      },
+      () => !blocked && void analyse()
+    )
     return () => {
       alive.current = false
     }
@@ -453,24 +474,32 @@ function SplitCommit({ repo }: { repo: RepoTab }) {
 
   let body: ReactNode
   let footer: ReactNode
-  if (phase.kind === 'analysing' || phase.kind === 'error') {
+  if (phase.kind === 'checking' || phase.kind === 'needsAi' || phase.kind === 'analysing' || phase.kind === 'error') {
     body = (
       <>
         <div className="smart-head">
           <Icon name="branch" size={13} /> <b>{status?.branch ?? 'detached HEAD'}</b>
           <span className="grow" />
-          <AiBadge ai={ai} />
+          <AiBadge ai={ai} onSetup={() => setPhase({ kind: 'needsAi' })} />
         </div>
         <span className="field-hint">
           Every uncommitted change — staged, unstaged and new files — is regrouped into commits. You review the groups and their messages before anything is
           committed.
         </span>
-        {phase.kind === 'analysing' ? (
-          <span className="smart-progress">
-            <span className="spinner small" /> {phase.label}…
-          </span>
-        ) : (
+        {phase.kind === 'needsAi' ? (
+          <AiQuickSetup
+            why="to group the changes into commits"
+            onConnected={(s) => {
+              setAi(s)
+              if (s.active) void analyse()
+            }}
+          />
+        ) : phase.kind === 'error' ? (
           <span className="field-error">{phase.message}</span>
+        ) : (
+          <span className="smart-progress">
+            <span className="spinner small" /> {phase.kind === 'analysing' ? phase.label : 'Starting'}…
+          </span>
         )}
       </>
     )
@@ -479,9 +508,11 @@ function SplitCommit({ repo }: { repo: RepoTab }) {
         <button className="btn" onClick={close}>
           Cancel
         </button>
-        <button className="btn primary" disabled={phase.kind === 'analysing' || !!blocked} onClick={() => void analyse()}>
-          {phase.kind === 'analysing' ? 'Grouping…' : 'Try again'}
-        </button>
+        {phase.kind !== 'needsAi' && (
+          <button className="btn primary" disabled={phase.kind !== 'error' || !!blocked} onClick={() => void analyse()}>
+            {phase.kind === 'error' ? 'Try again' : 'Grouping…'}
+          </button>
+        )}
       </>
     )
   } else if (phase.kind === 'review') {

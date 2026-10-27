@@ -813,6 +813,13 @@ export interface AiStatus {
   defaultModels: Record<AiProvider, string>
 }
 
+/** A credential that answered a test request */
+export interface AiVerified {
+  provider: AiProvider
+  model: string
+  reply: string
+}
+
 /** AI providers with the user's own key (Rust backend), exposed as `window.ai`. */
 export interface AiApi {
   status(): Promise<AiStatus>
@@ -820,6 +827,8 @@ export interface AiApi {
   update(settings?: Partial<AiSettings>, secrets?: Partial<Record<AiCredential, string | null>>): Promise<AiStatus>
   /** Send one prompt to the active provider and return its reply text */
   complete(prompt: string, maxTokens?: number): Promise<string>
+  /** Test one credential with a tiny request: the typed `secret` (not saved), or else the saved or environment one */
+  verify(credential: AiCredential, secret?: string): Promise<AiVerified>
 }
 
 /** Built-in terminal (portable-pty in the Rust backend), exposed as `window.term`. */

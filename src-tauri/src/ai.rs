@@ -87,6 +87,14 @@ pub struct ActiveProvider {
     pub credential: &'static str,
 }
 
+/// The outcome of checking one credential with a tiny request.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Verified {
+    pub provider: &'static str,
+    pub model: String,
+    pub reply: String,
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AiStatus {
@@ -102,16 +110,22 @@ pub struct AiStatus {
 static SHELL_ENV: OnceCell<HashMap<String, String>> = OnceCell::const_new();
 
 /// The environment an interactive login shell ends up with, read once. Empty when it can't be read in time.
+#[cfg(not(test))]
 async fn shell_env() -> &'static HashMap<String, String> {
     SHELL_ENV.get_or_init(read_shell_env).await
 }
 
-#[cfg(windows)]
+#[cfg(test)]
+async fn shell_env() -> &'static HashMap<String, String> {
+    SHELL_ENV.get_or_init(|| async { HashMap::new() }).await
+}
+
+#[cfg(all(windows, not(test)))]
 async fn read_shell_env() -> HashMap<String, String> {
     HashMap::new()
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(test)))]
 async fn read_shell_env() -> HashMap<String, String> {
     const MARK: &str = "__KAREN_ENV__";
     let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/sh".into());
@@ -330,16 +344,11 @@ impl AiSnapshot {
     pub async fn resolve(&self) -> Result<Resolved, String> {
         let (provider, credential) = self.pick().await?;
         let (secret, _, _) = self.secret(credential).await.ok_or("Credential disappeared")?;
-        // a proxy configured only in the login shell still has to reach curl
-        let mut env = vec![];
-        for var in PROXY_VARS {
-            if std::env::var_os(var).is_none() {
-                if let Some(v) = shell_env().await.get(var) {
-                    env.push((var.to_string(), v.clone()));
-                }
-            }
-        }
-        Ok(Resolved {
+        Ok(self.resolve_with(provider, credential, secret).await)
+    }
+
+    async fn resolve_with(&self, provider: &'static str, credential: &'static str, secret: String) -> Resolved {
+        Resolved {
             provider,
             credential,
             secret,
@@ -347,8 +356,37 @@ impl AiSnapshot {
             base_url: self.base_url(provider).await,
             timeout_seconds: self.settings.timeout_seconds,
             attempts: self.settings.attempts.max(1),
-            env,
-        })
+            // a proxy configured only in the login shell still has to reach curl
+            env: proxy_env().await,
+        }
+    }
+
+    /// One credential, whatever the provider setting: the typed `secret` when given (nothing is saved), else the
+    /// stored or environment one.
+    async fn resolve_credential(&self, credential: &str, secret: Option<String>) -> Result<Resolved, String> {
+        let provider = provider_of(credential).ok_or_else(|| format!("Unknown credential: {credential}"))?;
+        let credential = SECRETS.iter().map(|(n, _)| *n).find(|n| *n == credential).expect("provider_of knows it");
+        let secret = match secret.as_deref().and_then(non_empty) {
+            Some(s) => s,
+            None => self.secret(credential).await.map(|f| f.0).ok_or_else(|| "Enter a key first.".to_string())?,
+        };
+        Ok(self.resolve_with(provider, credential, secret).await)
+    }
+
+    /// Send a tiny request with one credential, so a key can be checked before it is saved.
+    pub async fn verify(&self, credential: &str, secret: Option<String>) -> Result<Verified, String> {
+        let r = self.resolve_credential(credential, secret).await?;
+        let reply = complete(&r, "Reply with the single word OK.", Some(16)).await?;
+        Ok(Verified { provider: r.provider, model: r.model, reply: reply.trim().chars().take(60).collect() })
+    }
+}
+
+fn provider_of(credential: &str) -> Option<&'static str> {
+    match credential {
+        "anthropicOauthToken" | "anthropicApiKey" => Some("anthropic"),
+        "openaiApiKey" => Some("openai"),
+        "geminiApiKey" => Some("gemini"),
+        _ => None,
     }
 }
 
@@ -620,6 +658,29 @@ mod tests {
         assert!(store.data.secrets.is_empty());
         assert!(store.update(json!({ "provider": "x" }).as_object().cloned(), None).is_err());
         assert!(store.update(None, json!({ "nope": "k" }).as_object().cloned()).is_err());
+    }
+
+    #[tokio::test]
+    async fn resolves_one_credential_for_verification() {
+        let s = snapshot("anthropic", &[("openaiApiKey", "saved")]);
+        let r = s.resolve_credential("openaiApiKey", Some(" typed ".into())).await.unwrap();
+        assert_eq!((r.provider, r.credential, r.secret.as_str()), ("openai", "openaiApiKey", "typed"));
+        assert_eq!(r.model, DEFAULT_OPENAI_MODEL);
+        let r = s.resolve_credential("openaiApiKey", Some("".into())).await.unwrap();
+        assert_eq!(r.secret, "saved");
+        assert_eq!(s.resolve_credential("geminiApiKey", None).await.unwrap_err(), "Enter a key first.");
+        assert!(s.resolve_credential("nope", Some("k".into())).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn verifies_a_typed_key() {
+        let (url, hits) = serve(vec![("200 OK", "Content-Type: application/json\r\n", r#"{"choices":[{"message":{"content":" OK\n"}}]}"#)]);
+        let mut s = snapshot("auto", &[]);
+        s.settings.openai_base_url = url;
+        s.settings.openai_model = "m".into();
+        let v = s.verify("openaiApiKey", Some("k".into())).await.unwrap();
+        assert_eq!(v, Verified { provider: "openai", model: "m".into(), reply: "OK".into() });
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
     }
 
     #[test]
