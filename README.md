@@ -99,30 +99,22 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 The [Release workflow](.github/workflows/release.yml) builds macOS (arm64 and x64 `.dmg`), Linux (`.deb`, `.rpm`, `.AppImage`) and Windows (`.exe`, `.msi`) installers and publishes them as a GitHub release. Running the workflow by hand from the Actions tab builds the same installers as workflow artifacts without releasing.
 
-### macOS signing and notarization
-Tagged releases are signed with a Developer ID certificate and notarized by Apple; the workflow fails if the secrets below are missing. Manual runs without them produce an ad-hoc signed, un-notarized app instead. Add these as repository secrets (Settings → Secrets and variables → Actions):
+### macOS signing
+Without a paid Apple Developer Program membership the macOS build is ad-hoc signed and not notarized, so Gatekeeper blocks it on first launch ("Karen cannot be opened" or "Karen is damaged"). After moving Karen to Applications, either:
+- run `xattr -dr com.apple.quarantine /Applications/Karen.app`, or
+- open Karen once, then go to System Settings → Privacy & Security and click **Open Anyway** (right-click → Open no longer works on macOS 15 and later).
+
+Each release also carries these instructions in its notes.
+
+To sign with a Developer ID certificate and notarize instead, add these repository secrets (Settings → Secrets and variables → Actions); the workflow uses them as soon as they exist:
 
 | Secret | Value |
 |---|---|
 | `APPLE_CERTIFICATE` | The **Developer ID Application** certificate and its private key, exported from Keychain Access as `.p12`, base64 encoded: `base64 -i cert.p12 \| pbcopy` |
 | `APPLE_CERTIFICATE_PASSWORD` | The password chosen when exporting the `.p12` |
 | `APPLE_SIGNING_IDENTITY` | Optional, e.g. `Developer ID Application: Your Name (TEAMID)`; taken from the certificate when omitted |
-
-For notarization, set either an App Store Connect API key (recommended):
-
-| Secret | Value |
-|---|---|
-| `APPLE_API_ISSUER` | Issuer ID, from App Store Connect → Users and Access → Integrations → App Store Connect API |
-| `APPLE_API_KEY` | Key ID |
-| `APPLE_API_KEY_P8` | Contents of the downloaded `AuthKey_<KEY ID>.p8` file |
-
-or an Apple ID:
-
-| Secret | Value |
-|---|---|
-| `APPLE_ID` | Apple ID email |
-| `APPLE_PASSWORD` | An [app-specific password](https://support.apple.com/102654) for that Apple ID |
-| `APPLE_TEAM_ID` | Team ID, from developer.apple.com → Account → Membership details |
+| `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_P8` | For notarization: App Store Connect API issuer ID, key ID and the contents of the `.p8` key file |
+| `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Or notarize with an Apple ID, an [app-specific password](https://support.apple.com/102654) and the team ID |
 
 ## Layout
 ```
