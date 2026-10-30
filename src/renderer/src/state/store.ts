@@ -14,6 +14,7 @@ import type {
   Worktree
 } from '@shared/types'
 import { DEFAULT_PREFERENCES } from '@shared/types'
+import type { PullRequest } from '@shared/integrations'
 import { closeRepoSessions } from './terminals'
 import { clearProgress } from './progress'
 
@@ -24,6 +25,9 @@ export type Selection =
   /** Uncommitted changes of another worktree (its WIP row in the graph) */
   | { kind: 'worktree'; path: string }
   | null
+
+/** An AI write-up: a summary of commits (oldest first) or a review of a pull request. */
+export type AiTask = { kind: 'summary'; shas: string[] } | { kind: 'review'; pr: PullRequest }
 
 /** What the center area shows. The graph is the default; others open on top of it. */
 export type CenterView =
@@ -37,6 +41,7 @@ export type CenterView =
   | { kind: 'reflog' }
   /** Two revisions (branch names or shas) side by side: what `to` changes and adds compared to `from` */
   | { kind: 'compare'; from: string; to: string }
+  | { kind: 'ai'; task: AiTask }
 
 export interface RepoTab {
   path: string

@@ -5,6 +5,7 @@ import { useHosting } from '../state/hosting'
 import type { MenuItem } from '../ui/ContextMenu'
 import { copyText } from './refActions'
 import { openCompare } from './compareActions'
+import { reviewWithAi } from './aiActions'
 import { scrollToSha } from '../graph/nav'
 
 export function openCreatePullRequest(head?: string, base?: string) {
@@ -55,6 +56,7 @@ export function pullRequestMenuItems(repo: RepoTab, pr: PullRequest): MenuItem[]
   return [
     { label: `Checkout #${pr.number}`, onClick: () => void checkoutPullRequest(repo, pr) },
     { label: 'Open on web', onClick: () => void window.app.openExternal(pr.url) },
+    { label: 'Review with AI', onClick: () => reviewWithAi(repo, pr) },
     !!head && { label: 'Show in graph', onClick: () => revealPullRequest(repo, pr) },
     !!head && !!base && { label: `Compare with ${base.name}`, onClick: () => openCompare(base.name, head.name) },
     'separator',

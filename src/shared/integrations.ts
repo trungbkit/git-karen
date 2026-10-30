@@ -61,6 +61,8 @@ export interface CiStatus {
 export interface PullRequest {
   number: number
   title: string
+  /** The description (cut to 4000 characters) */
+  body: string
   url: string
   author: string
   draft: boolean
@@ -133,6 +135,8 @@ export interface IntegrationsApi {
   createPullRequest(repo: string, input: CreatePullRequestInput): Promise<CreatedPullRequest>
   /** Fetch and check out a PR; returns the local branch name */
   checkoutPullRequest(repo: string, remote: string | null, number: number, headBranch: string, sameRepo: boolean): Promise<string>
+  /** Fetch a PR's base branch and head without checking anything out; returns the head commit */
+  fetchPullRequest(repo: string, remote: string | null, number: number, headBranch: string, sameRepo: boolean, baseBranch: string): Promise<string>
   /** CI status by sha for the commits that have checks (cached in the backend; stale entries older than maxAgeSecs are refetched) */
   ciStatuses(repo: string, remote: string | null, shas: string[], maxAgeSecs: number): Promise<Record<string, CiStatus>>
 }

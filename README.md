@@ -65,6 +65,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for scope and design choices, a
 - Commit messages and pull request titles and descriptions from Anthropic (Claude), OpenAI or Gemini
 - Smart commit: stage → commit → push → open a pull request in one flow, against configurable target branches
 - Split the working-tree changes into several commits grouped by the AI
+- Resolve merge conflicts with AI: it merges both sides of every conflict in a file, explains each choice, and fills the output for you to review before saving
+- Summarize selected commits: what they change taken together, grouped by area, with anything worth a closer look (multi-select panel or the commit context menu)
+- Review pull requests with AI from the Pull requests list: the PR is fetched without checking it out, diffed against its base like the provider does, and reviewed with findings by severity and a verdict
 - Quick setup right where AI is needed (smart commit, split, Preferences): paste a key, the provider is recognised from it, and it is checked with a tiny request before it is saved
 - Keys stay in the backend; environment variables such as `ANTHROPIC_API_KEY` are picked up as well
 

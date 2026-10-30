@@ -414,6 +414,15 @@ pub struct BranchComparison {
     pub diff: String,
 }
 
+/// One commit's message and patch, for describing a selection of commits.
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct CommitPatch {
+    pub sha: String,
+    pub author: String,
+    pub message: String,
+    pub diff: String,
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct PrTemplate {
     pub path: String,

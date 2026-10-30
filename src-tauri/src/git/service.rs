@@ -269,6 +269,7 @@ impl GitService {
                         &a.get::<String>(3)?
                     )),
                     "prTemplate" => ret!(self.pr_template(r)),
+                    "commitPatches" => ret!(self.commit_patches(r, &a.get::<Vec<String>>(1)?)),
                     "createPullRequest" => ret!(self.create_pull_request(
                         r,
                         &a.get::<String>(1)?,

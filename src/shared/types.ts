@@ -566,6 +566,14 @@ export interface BranchComparison {
   diff: string
 }
 
+/** One commit's message and patch (merges against their first parent), for describing a selection of commits. */
+export interface CommitPatch {
+  sha: string
+  author: string
+  message: string
+  diff: string
+}
+
 export interface PrTemplate {
   path: string
   content: string
@@ -710,6 +718,8 @@ export interface GitApi {
   pendingDiff(repo: string, includeUnstaged: boolean): Promise<PendingDiff>
   compareBranch(repo: string, from: string, target: string, remote: string): Promise<BranchComparison>
   prTemplate(repo: string): Promise<PrTemplate | null>
+  /** Message and patch of each commit, in the order given (at most 100) */
+  commitPatches(repo: string, shas: string[]): Promise<CommitPatch[]>
   /** Open a GitHub PR with the gh CLI, unless the branches aren't on the remote, nothing is new, or one is open */
   createPullRequest(repo: string, remote: string, from: string, to: string, title: string, body: string): Promise<PullRequestResult>
 

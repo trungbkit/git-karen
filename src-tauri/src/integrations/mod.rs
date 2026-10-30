@@ -77,6 +77,8 @@ pub struct CiStatus {
 pub struct PullRequest {
     pub number: u64,
     pub title: String,
+    /// The description, cut to `MAX_PR_BODY_CHARS`
+    pub body: String,
     pub url: String,
     pub author: String,
     pub draft: bool,
@@ -340,6 +342,34 @@ fn safe_name(name: &str, what: &str) -> Result<(), String> {
         return Err(format!("Invalid {what}: {name}"));
     }
     Ok(())
+}
+
+/// Longest PR description kept from a listing; enough to tell what a PR is for.
+pub const MAX_PR_BODY_CHARS: usize = 4000;
+
+pub fn pr_body(text: &str) -> String {
+    text.trim().chars().take(MAX_PR_BODY_CHARS).collect()
+}
+
+/// Fetch a PR's base branch and head without checking anything out, and return the head commit. Same-repository
+/// PRs update the remote-tracking branch like a plain fetch would; fork PRs are read from the provider's PR ref
+/// into FETCH_HEAD only, so no ref is left behind.
+async fn fetch_pr(repo: &str, remote: &str, kind: Kind, number: u64, head_branch: &str, same_repo: bool, base_branch: &str) -> Result<String, String> {
+    safe_name(base_branch, "branch name")?;
+    git_write(repo, &["fetch", "--no-tags", remote, &format!("+refs/heads/{base_branch}:refs/remotes/{remote}/{base_branch}")]).await?;
+    if same_repo && !head_branch.is_empty() {
+        safe_name(head_branch, "branch name")?;
+        let tracking = format!("refs/remotes/{remote}/{head_branch}");
+        git_write(repo, &["fetch", "--no-tags", remote, &format!("+refs/heads/{head_branch}:{tracking}")]).await?;
+        return git_out(repo, &["rev-parse", "--verify", &format!("{tracking}^{{commit}}")]).await;
+    }
+    let src = match kind {
+        Kind::Github => format!("refs/pull/{number}/head"),
+        Kind::Gitlab => format!("refs/merge-requests/{number}/head"),
+        k => return Err(format!("Fetching pull requests from {} is not supported.", k.label())),
+    };
+    git_write(repo, &["fetch", "--no-tags", remote, &src]).await?;
+    git_out(repo, &["rev-parse", "--verify", "FETCH_HEAD^{commit}"]).await
 }
 
 /// Fetch a PR's head and check it out. Same-repository PRs check out their real branch (tracking the remote);
@@ -648,6 +678,12 @@ impl Integrations {
         checkout_pr(repo, &remote, r.provider.kind, number, &head_branch, same_repo).await
     }
 
+    /// Fetch a PR's base and head (nothing is checked out) and return the head commit, for reviewing it locally.
+    pub async fn fetch_pull_request(&self, repo: &str, remote: Option<String>, number: u64, head_branch: String, same_repo: bool, base_branch: String) -> Result<String, String> {
+        let (remote, r) = self.repo_ref(repo, remote).await?;
+        fetch_pr(repo, &remote, r.provider.kind, number, &head_branch, same_repo, &base_branch).await
+    }
+
     /// CI status of commits, from the cache when fresh. Final results are kept for the session; pending ones are
     /// refetched when older than `max_age_secs` (at least 30s), commits without checks every 10 minutes. Polling is
     /// best effort: no token, unsupported providers, rate limits and errors just return what is cached.
@@ -714,6 +750,16 @@ impl Integrations {
             "createPullRequest" => v(self.create_pull_request(&a.get::<String>(0)?, a.get(1)?).await?),
             "checkoutPullRequest" => v(self
                 .checkout_pull_request(&a.get::<String>(0)?, a.get(1)?, a.get(2)?, a.get::<Option<String>>(3)?.unwrap_or_default(), a.get::<Option<bool>>(4)?.unwrap_or(false))
+                .await?),
+            "fetchPullRequest" => v(self
+                .fetch_pull_request(
+                    &a.get::<String>(0)?,
+                    a.get(1)?,
+                    a.get(2)?,
+                    a.get::<Option<String>>(3)?.unwrap_or_default(),
+                    a.get::<Option<bool>>(4)?.unwrap_or(false),
+                    a.get::<String>(5)?,
+                )
                 .await?),
             "ciStatuses" => v(self.ci_statuses(&a.get::<String>(0)?, a.get(1)?, a.get(2)?, a.get::<Option<u64>>(3)?.unwrap_or(60)).await?),
             _ => Err(format!("Unknown method: {method}")),
@@ -826,6 +872,31 @@ mod tests {
         assert_eq!(git_out(repo, &["rev-parse", "--abbrev-ref", "topic@{upstream}"]).await.unwrap(), "origin/topic");
         assert!(checkout_pr(repo, "origin", Kind::Github, 8, "-x", true).await.is_err());
         assert!(checkout_pr(repo, "origin", Kind::Bitbucket, 9, "", false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn fetches_pull_requests_without_checking_them_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let (server, clone) = (dir.path().join("server"), dir.path().join("clone"));
+        std::fs::create_dir_all(&server).unwrap();
+        sh(&server, &["init", "-q", "-b", "main"]);
+        sh(&server, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base"]);
+        sh(dir.path(), &["clone", "-q", server.to_str().unwrap(), "clone"]);
+        sh(&server, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "pr work"]);
+        sh(&server, &["update-ref", "refs/pull/7/head", "HEAD"]);
+        sh(&server, &["branch", "topic", "HEAD"]);
+        sh(&server, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "main moved"]);
+        let head = git_out(server.to_str().unwrap(), &["rev-parse", "refs/pull/7/head"]).await.unwrap();
+
+        let repo = clone.to_str().unwrap();
+        assert_eq!(fetch_pr(repo, "origin", Kind::Github, 7, "x", false, "main").await.unwrap(), head);
+        // the base was fetched, nothing was checked out and no ref was created for a fork PR
+        assert_eq!(git_out(repo, &["log", "-1", "--format=%s", "origin/main"]).await.unwrap(), "main moved");
+        assert_eq!(git_out(repo, &["log", "-1", "--format=%s", "HEAD"]).await.unwrap(), "base");
+        assert!(!git_out(repo, &["for-each-ref", "--format=%(refname)"]).await.unwrap().contains("pr"));
+        assert_eq!(fetch_pr(repo, "origin", Kind::Github, 8, "topic", true, "main").await.unwrap(), head);
+        assert!(fetch_pr(repo, "origin", Kind::Github, 8, "topic", true, "-x").await.is_err());
+        assert!(fetch_pr(repo, "origin", Kind::Bitbucket, 9, "", false, "main").await.is_err());
     }
 
     #[test]

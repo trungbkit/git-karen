@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use super::remote::RepoRef;
-use super::{enc, Api, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
+use super::{enc, pr_body, Api, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
 
 /// GitLab has no batch endpoint for commit statuses; at most this many commits are asked about per call (the rest
 /// come with the next poll), one request at a time to stay gentle with the instance.
@@ -37,6 +37,7 @@ pub fn parse_merge_requests(list: &Value, viewer: Option<String>, r: &RepoRef) -
                     PullRequest {
                         number: m["iid"].as_u64().unwrap_or(0),
                         title: s(&m["title"]),
+                        body: pr_body(&s(&m["description"])),
                         url: s(&m["web_url"]),
                         mine: viewer.as_deref() == Some(author.as_str()),
                         review_requested: viewer.as_ref().is_some_and(|v| reviewers.contains(v)),

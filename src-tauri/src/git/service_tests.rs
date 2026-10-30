@@ -766,6 +766,19 @@ async fn smart_commit_probes_pending_work_and_compares_branches() {
     assert_eq!(r.status, "skipped");
 }
 
+#[tokio::test]
+async fn commit_patches_carry_message_and_diff() {
+    let (svc, _d, repo) = setup().await;
+    let a = commit_file(&repo, "a.txt", "a\n", "first").await;
+    let b = commit_file(&repo, "a.txt", "a\nb\n", "second\n\nwith a body").await;
+    let patches = svc.commit_patches(&repo, &[a.clone(), b.clone()]).await.unwrap();
+    assert_eq!(patches.iter().map(|p| p.sha.as_str()).collect::<Vec<_>>(), [a.as_str(), b.as_str()]);
+    assert_eq!((patches[1].author.as_str(), patches[1].message.as_str()), ("Test User", "second\n\nwith a body"));
+    // the root commit diffs against the empty tree
+    assert!(patches[0].diff.contains("+a") && patches[1].diff.contains("+b") && !patches[1].diff.contains("+a"));
+    assert!(svc.commit_patches(&repo, &["--all".into()]).await.is_err());
+}
+
 // ------------------------------------------------------------------ undo & recovery
 
 #[tokio::test]

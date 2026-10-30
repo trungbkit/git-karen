@@ -49,7 +49,7 @@ const GIT_METHODS: Record<keyof GitApi, true> = {
   removeRemote: true, editRemote: true, submoduleUpdate: true, submoduleAdd: true, worktreeAdd: true,
   worktreeRemove: true, worktreeLock: true, worktreePrune: true, getConfig: true, setConfig: true,
   gitflowInit: true, gitflowConfig: true, gitflowStart: true, gitflowFinish: true, lfsInstalled: true,
-  lfsTrack: true, lfsCommand: true, smartStatus: true, pendingDiff: true, compareBranch: true, prTemplate: true,
+  lfsTrack: true, lfsCommand: true, smartStatus: true, pendingDiff: true, compareBranch: true, prTemplate: true, commitPatches: true,
   createPullRequest: true, reflog: true, resolveRef: true, countCommits: true, branchImpact: true,
   discardImpact: true, snapshot: true, applySnapshot: true, stashStore: true, undoStashPop: true, restoreBranch: true,
   backupFiles: true, restoreFiles: true, pushSha: true, watch: true, unwatch: true
@@ -164,6 +164,8 @@ const integrations: IntegrationsApi = {
   reviewerSuggestions: (repo, remote) => hostingCall('reviewerSuggestions', repo, remote ?? null),
   createPullRequest: (repo, input) => hostingCall('createPullRequest', repo, input),
   checkoutPullRequest: (repo, remote, number, headBranch, sameRepo) => hostingCall('checkoutPullRequest', repo, remote, number, headBranch, sameRepo),
+  fetchPullRequest: (repo, remote, number, headBranch, sameRepo, baseBranch) =>
+    hostingCall('fetchPullRequest', repo, remote, number, headBranch, sameRepo, baseBranch),
   ciStatuses: (repo, remote, shas, maxAgeSecs) => hostingCall('ciStatuses', repo, remote, shas, maxAgeSecs)
 }
 

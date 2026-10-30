@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use super::remote::{github_graphql_url, RepoRef};
-use super::{enc, Api, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
+use super::{enc, pr_body, Api, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
 
 /// Commits per CI query; GitHub caps a query's node count, and 50 commits × 50 checks stays well under it
 const CI_BATCH: usize = 50;
@@ -37,7 +37,7 @@ const PR_QUERY: &str = r#"query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
       nodes {
-        number title url isDraft updatedAt headRefName baseRefName isCrossRepository
+        number title body url isDraft updatedAt headRefName baseRefName isCrossRepository
         author { login }
         headRepository { nameWithOwner }
         reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on User { login } ... on Team { slug } } } }
@@ -72,6 +72,7 @@ pub fn parse_pull_requests(data: &Value) -> PullRequestList {
             PullRequest {
                 number: n["number"].as_u64().unwrap_or(0),
                 title: s(&n["title"]),
+                body: pr_body(&s(&n["body"])),
                 url: s(&n["url"]),
                 mine: viewer.as_deref() == Some(author.as_str()),
                 author,

@@ -112,14 +112,19 @@ export interface ConflictChoice {
   theirs: boolean
 }
 
-/** Render merged output; conflict chunks take the chosen sides (ours first). */
-export function renderMerge(chunks: Chunk[], choices: ConflictChoice[]): string[] {
+/**
+ * Render merged output; conflict chunks take the chosen sides (ours first), or the lines of `overrides` where it has
+ * them (e.g. an AI resolution).
+ */
+export function renderMerge(chunks: Chunk[], choices: ConflictChoice[], overrides: (string[] | null)[] = []): string[] {
   const out: string[] = []
   let c = 0
   for (const chunk of chunks) {
     if (chunk.kind === 'conflict') {
+      const override = overrides[c]
       const choice = choices[c++] ?? { ours: false, theirs: false }
-      if (choice.ours) out.push(...chunk.ours)
+      if (override) out.push(...override)
+      else if (choice.ours) out.push(...chunk.ours)
       if (choice.theirs) out.push(...chunk.theirs)
     } else out.push(...chunk.lines)
   }

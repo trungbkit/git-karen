@@ -542,9 +542,17 @@ async fn post_json(url: &str, headers: &[(&str, String)], body: &Value, r: &Reso
     }
 }
 
+/// Seconds a reply of `max_tokens` may take to write, at a conservative 40 tokens per second.
+fn timeout_for(timeout_seconds: u32, max_tokens: u32) -> u32 {
+    timeout_seconds.max(max_tokens / 40)
+}
+
 /// Send one prompt to the resolved provider and return the text of the reply.
 pub async fn complete(r: &Resolved, prompt: &str, max_tokens: Option<u32>) -> Result<String, String> {
     let max_tokens = max_tokens.unwrap_or(DEFAULT_MAX_TOKENS).clamp(16, 8192);
+    // long replies (reviews, conflict resolutions) outlast a timeout sized for commit messages
+    let resolved = Resolved { timeout_seconds: timeout_for(r.timeout_seconds, max_tokens), ..r.clone() };
+    let r = &resolved;
     match r.provider {
         "anthropic" => {
             let oauth = r.credential == "anthropicOauthToken";
@@ -693,6 +701,13 @@ mod tests {
         let e = parse_response("{\"error\":{\"message\":\"bad key\"}}\n401", "").unwrap_err();
         assert!(!e.retryable);
         assert!(parse_response("<html>\n200", "").is_err());
+    }
+
+    #[test]
+    fn long_replies_get_more_time() {
+        assert_eq!(timeout_for(30, 500), 30);
+        assert_eq!(timeout_for(30, 4000), 100);
+        assert_eq!(timeout_for(300, 8192), 300);
     }
 
     #[test]

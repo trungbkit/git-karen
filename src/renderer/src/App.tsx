@@ -13,6 +13,7 @@ import { RebasePanel } from './components/RebasePanel'
 import { FileHistoryView } from './components/FileHistoryView'
 import { ReflogView } from './components/ReflogView'
 import { CompareView } from './components/CompareView'
+import { AiReportView } from './components/AiReportView'
 import { TerminalPanel } from './components/TerminalPanel'
 import { useTerminals } from './state/terminals'
 import { FuzzyFinder } from './components/FuzzyFinder'
@@ -98,6 +99,7 @@ export function App() {
               {repo.center.kind === 'history' && <FileHistoryView repo={repo} path={repo.center.path} blame={repo.center.blame} />}
               {repo.center.kind === 'reflog' && <ReflogView repo={repo} />}
               {repo.center.kind === 'compare' && <CompareView repo={repo} from={repo.center.from} to={repo.center.to} />}
+              {repo.center.kind === 'ai' && <AiReportView repo={repo} task={repo.center.task} />}
               {showTerminal && <TerminalPanel key={repo.path} repo={repo} />}
             </div>
             {showRight && (

@@ -14,6 +14,7 @@ use crate::types::*;
 const MAX_DIFF_BYTES: usize = 4 * 1024 * 1024;
 const MAX_UNTRACKED: usize = 200;
 const MAX_BRANCH_COMMITS: usize = 30;
+const MAX_PATCH_COMMITS: usize = 100;
 const PR_TEMPLATE_MAX_CHARS: usize = 4000;
 
 static PR_TEMPLATE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^pull_request_template\.(md|txt)$").unwrap());
@@ -24,9 +25,13 @@ fn a(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
 }
 
-fn cap(mut s: String) -> String {
-    if s.len() > MAX_DIFF_BYTES {
-        let mut end = MAX_DIFF_BYTES;
+fn cap(s: String) -> String {
+    cap_at(s, MAX_DIFF_BYTES)
+}
+
+fn cap_at(mut s: String, max: usize) -> String {
+    if s.len() > max {
+        let mut end = max;
         while !s.is_char_boundary(end) {
             end -= 1;
         }
@@ -152,6 +157,26 @@ impl GitService {
         let log = a(&["log", "--no-merges", "--cherry-pick", "--right-only", &max, "--format=%s", &format!("{target_ref}...{from}")]);
         let commits = lines(&self.out(repo, log).await.unwrap_or_default());
         Ok(BranchComparison { target_exists: true, commits, stat: stat.trim_end().to_string(), diff: cap(diff) })
+    }
+
+    /// Message and patch of each commit (merges against their first parent), in the order given. The size cap is
+    /// shared between the commits so a selection can't grow without bound.
+    pub async fn commit_patches(&self, repo: &str, shas: &[String]) -> Res<Vec<CommitPatch>> {
+        if shas.len() > MAX_PATCH_COMMITS {
+            return Err(format!("Select at most {MAX_PATCH_COMMITS} commits."));
+        }
+        let budget = MAX_DIFF_BYTES / shas.len().max(1);
+        let mut out = Vec::with_capacity(shas.len());
+        for sha in shas {
+            if sha.is_empty() || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(format!("Not a commit: {sha}"));
+            }
+            let meta = self.out(repo, a(&["show", "-s", "--format=%an%x00%B", sha])).await?;
+            let (author, message) = meta.split_once('\0').unwrap_or(("", &meta));
+            let diff = self.out(repo, a(&["show", "--format=", "--patch", "-M", "--no-color", "--no-ext-diff", "--diff-merges=first-parent", sha])).await?;
+            out.push(CommitPatch { sha: sha.clone(), author: author.to_string(), message: message.trim().to_string(), diff: cap_at(diff, budget) });
+        }
+        Ok(out)
     }
 
     /// The repository's pull request template, where GitHub looks for one: the root, .github/ and docs/.

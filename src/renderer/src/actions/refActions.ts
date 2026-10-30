@@ -9,6 +9,7 @@ import { branchWorktreeItems, createWorktree, openWorktree, worktreeForBranch } 
 import { offerUndo, runRestorable } from './undo'
 import { deleteBranchImpact, forcePushImpact, resetImpact } from './impact'
 import { compareRefMenuItems, openCompare, orderedPair } from './compareActions'
+import { summarizeWithAi } from './aiActions'
 import { dismissBehindNotice, noteFetched, upstreamTip } from '../state/autoFetch'
 
 const store = () => useStore.getState()
@@ -495,9 +496,15 @@ export function commitMenuItems(repo: RepoTab, sha: string): MenuItem[] {
   const localsHere = repo.refs.filter((r) => r.type === 'local' && r.sha === sha && !r.isHead)
   const pair = repo.selection?.kind === 'commit' && repo.selection.shas.includes(sha) ? orderedPair(repo, repo.selection.shas) : null
 
+  const selected = repo.selection?.kind === 'commit' && repo.selection.shas.includes(sha) ? repo.selection.shas : [sha]
+
   return [
     pair && { label: `Compare ${shortSha(pair[0])} and ${shortSha(pair[1])}`, onClick: () => openCompare(pair[0], pair[1]) },
-    pair && 'separator',
+    {
+      label: selected.length > 1 ? `Summarize ${selected.length} commits with AI` : 'Summarize commit with AI',
+      onClick: () => summarizeWithAi(repo, selected)
+    },
+    'separator',
     ...localsHere.map((ref) => ({
       label: worktreeForBranch(repo, ref.name) ? `Open worktree for ${ref.name}` : `Checkout ${ref.name}`,
       onClick: () => void checkoutRef(repo, ref)

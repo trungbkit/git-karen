@@ -8,6 +8,7 @@ import { StagingPanel } from './StagingPanel'
 import { WorktreePanel } from './WorktreePanel'
 import { cherryPick } from '../actions/refActions'
 import { openCompare } from '../actions/compareActions'
+import { summarizeWithAi } from '../actions/aiActions'
 import '../styles/detail.css'
 
 const OPERATION_LABEL: Record<RepoOperation, string> = {
@@ -98,6 +99,9 @@ function MultiCommitSummary({ repo, shas }: { repo: RepoTab; shas: string[] }) {
               Compare
             </button>
           )}
+          <button className="btn small" title="What these commits change, taken together, written by AI" onClick={() => summarizeWithAi(repo, ordered)}>
+            <Icon name="sparkle" size={12} /> Summarize with AI
+          </button>
           <button
             className="btn small"
             disabled={!oldest || oldest.parents.length === 0}
