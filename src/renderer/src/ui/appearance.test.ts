@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accentVars, parseHex, resolveTheme, rowHeight, schemeOf, textOn } from './appearance'
+import { accentVars, fontStack, parseHex, resolveTheme, rowHeight, schemeOf, textOn } from './appearance'
 
 describe('themes', () => {
   it('follows the system setting for "system" and keeps a chosen theme', () => {
@@ -52,5 +52,13 @@ describe('density', () => {
     expect(rowHeight('comfortable')).toBe(28)
     expect(rowHeight('compact')).toBe(24)
     expect(rowHeight('bogus' as never)).toBe(28)
+  })
+})
+
+describe('fontStack', () => {
+  it('puts a custom family first, strips CSS-breaking characters and keeps the built-in stack for empty input', () => {
+    expect(fontStack('', 'monospace')).toBe('monospace')
+    expect(fontStack(' Inter ', 'sans-serif')).toBe('"Inter", sans-serif')
+    expect(fontStack('Evil"; color: red', 'sans-serif')).toBe('"Evil color: red", sans-serif')
   })
 })

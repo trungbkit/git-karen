@@ -9,7 +9,8 @@ body {
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
-button, input, textarea, select { font: inherit; color: inherit; }
+/* fixed line-height: `normal` differs per font, so control heights (and text centring) would differ between macOS and Linux */
+button, input, textarea, select { font: inherit; color: inherit; line-height: 1.25; }
 input, textarea, select {
   background: var(--bg-input);
   border: 1px solid var(--border);

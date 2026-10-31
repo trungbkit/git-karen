@@ -38,8 +38,11 @@
 }
 .file-row:hover { background: var(--bg-hover); }
 .file-row.selected { background: var(--bg-selected); }
-.file-row .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-.file-row .file-name > span { direction: ltr; unicode-bidi: plaintext; }
+.file-row .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* path = dir + file name (pathLabel): the dir shrinks first, the file name only when it alone does not fit */
+.path { display: flex; min-width: 0; }
+.path-dir, .path-base { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4; } /* room for descenders (_) that overflow:hidden would clip */
+.path-dir { flex: 0 1000 auto; }
 .file-row .file-dir { color: var(--text-disabled); }
 .file-row.selected .file-dir { color: var(--text-secondary); }
 .file-row .file-actions { display: none; gap: 2px; align-items: center; }
@@ -180,8 +183,7 @@
 
 /* diff view header + toolbar */
 .dv-head { display: flex; align-items: center; gap: 8px; height: 36px; flex: none; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel-2); }
-.dv-path { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-weight: 600; }
-.dv-path > span { direction: ltr; unicode-bidi: plaintext; }
+.dv-path { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .dv-path .file-dir { color: var(--text-disabled); font-weight: 400; }
 .dv-head .grow, .dv-tools .grow { flex: 1; }
 .dv-tools {

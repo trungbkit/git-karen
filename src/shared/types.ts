@@ -424,6 +424,9 @@ export interface Preferences {
   useInAppTerminal: boolean
   /** git -c gpg / signing handled by user's git config */
   fontSize: number
+  /** Font family of the interface / of code, diffs and the terminal; empty uses the built-in stack (CSS `--font-ui`, `--font-mono`) */
+  uiFont: string
+  monoFont: string
   /** Colour code in diff, blame and merge views */
   syntaxHighlighting: boolean
   /** Main layout column widths (px), set by dragging the panel splitters */
@@ -503,6 +506,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   pushAfterCommit: false,
   useInAppTerminal: true,
   fontSize: 13,
+  uiFont: '',
+  monoFont: '',
   syntaxHighlighting: true,
   leftPanelWidth: 260,
   rightPanelWidth: 380,

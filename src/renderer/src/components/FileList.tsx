@@ -217,13 +217,14 @@ function flatten(root: TreeNode, desc: boolean, collapsed: Set<string>): Row[] {
   return out
 }
 
-function pathLabel(f: FileChange): ReactNode {
-  const i = f.path.lastIndexOf('/')
+/** Dir (dimmed) + file name; when the row is too narrow the dir shrinks with an ellipsis and the file name stays whole. */
+export function pathLabel(path: string, oldPath?: string): ReactNode {
+  const i = path.lastIndexOf('/')
+  const dir = `${oldPath && oldPath !== path ? `${oldPath} → ` : ''}${path.slice(0, i + 1)}`
   return (
-    <span>
-      {f.oldPath && f.oldPath !== f.path && <span className="file-dir">{f.oldPath} → </span>}
-      {i >= 0 && <span className="file-dir">{f.path.slice(0, i + 1)}</span>}
-      {f.path.slice(i + 1)}
+    <span className="path">
+      {dir && <span className="path-dir file-dir">{dir}</span>}
+      <span className="path-base">{path.slice(i + 1)}</span>
     </span>
   )
 }
@@ -429,7 +430,7 @@ export function FileList(props: Props) {
         onContextMenu={onContextMenu ? (e) => onContextMenu(e, f) : undefined}
       >
         <StatusIcon status={f.status} />
-        <span className="file-name">{r.name !== undefined ? <span>{r.name}</span> : pathLabel(f)}</span>
+        <span className="file-name">{r.name !== undefined ? <span>{r.name}</span> : pathLabel(f.path, f.oldPath)}</span>
         {showStats && (f.additions !== undefined || f.deletions !== undefined) && (
           <span className="stats">
             {!!f.additions && <span className="add">+{f.additions}</span>}

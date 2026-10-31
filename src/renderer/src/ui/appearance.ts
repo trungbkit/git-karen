@@ -79,6 +79,12 @@ export function accentVars(color: string, scheme: Scheme): Record<string, string
 
 const ACCENT_KEYS = Object.keys(accentVars('#000', 'dark'))
 
+/** CSS font stack: the user's family (quotes and other CSS-breaking characters removed) ahead of the built-in stack; empty keeps the built-in one. */
+export function fontStack(family: string, builtIn: string): string {
+  const name = family.replace(/["'\\;{}<>]/g, '').trim()
+  return name ? `"${name}", ${builtIn}` : builtIn
+}
+
 /** Apply theme, accent and density to <html>. `systemDark` is the OS setting (`prefers-color-scheme`). */
 export function applyAppearance(prefs: Pick<Preferences, 'theme' | 'accentColor' | 'density'>, systemDark: boolean) {
   const root = document.documentElement

@@ -48,8 +48,12 @@
   --lane-8: #7bd938;
   --lane-9: #2ece9d;
 
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* macOS / Windows fonts first, then system-ui and common Linux fonts (without them WebKitGTK falls back to a font
+     with different ascent/descent and text sits off-centre in buttons and inputs) */
+  --font-ui-default: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Ubuntu', 'Cantarell', 'Noto Sans', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono-default: 'SF Mono', Menlo, Consolas, 'Ubuntu Mono', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+  --font-ui: var(--font-ui-default); /* Preferences > Font overrides these two inline on <html> */
+  --font-mono: var(--font-mono-default);
   --font-size: 13px;
   --radius: 6px;
   /* graph and file list rows; the left panel uses 4px less (density preference) */
