@@ -21,6 +21,8 @@ fn isolate_git_env() {
             "[user]\n\tname = Test User\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n",
         )
         .unwrap();
+        // the terminal tests run a login shell in this HOME; without startup files zsh (Linux) runs its new-user wizard
+        std::fs::write(home.join(".zshrc"), "").unwrap();
         std::env::set_var("GIT_CONFIG_GLOBAL", &cfg);
         std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
         std::env::set_var("HOME", &home);

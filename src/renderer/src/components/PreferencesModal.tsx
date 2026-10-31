@@ -196,7 +196,7 @@ export function PreferencesModal() {
       {label}
     </label>
   )
-  const text = (key: 'defaultBranchName' | 'externalEditor' | 'editorLineArgs' | 'externalTerminal' | 'diffTool' | 'mergeTool' | 'smartCommitTargets' | 'protectedBranches', placeholder?: string) => (
+  const text = (key: 'defaultBranchName' | 'externalEditor' | 'editorLineArgs' | 'externalTerminal' | 'diffTool' | 'mergeTool' | 'smartCommitTargets' | 'protectedBranches' | 'uiFont' | 'monoFont', placeholder?: string) => (
     <input value={draft[key]} placeholder={placeholder} onChange={(e) => set(key, e.target.value)} />
   )
 
@@ -313,6 +313,14 @@ export function PreferencesModal() {
                     <option value="comfortable">Comfortable</option>
                     <option value="compact">Compact</option>
                   </select>
+                </Field>
+              </div>
+              <div className="row2">
+                <Field label="Interface font" hint="Installed font family name, e.g. Inter or Ubuntu.">
+                  {text('uiFont', 'Default')}
+                </Field>
+                <Field label="Code font" hint="Diffs, blame, merge and terminal, e.g. JetBrains Mono. Terminal: reopen it.">
+                  {text('monoFont', 'Default')}
                 </Field>
               </div>
               {check('syntaxHighlighting', 'Syntax highlighting in diff, blame and merge views')}

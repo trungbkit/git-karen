@@ -5,7 +5,7 @@ import { Icon, type IconName } from '../ui/Icon'
 import { confirm } from '../ui/dialogs'
 import { basename, shortSha } from '../util/format'
 import { useCommitDetail } from './CommitDetail'
-import { StatusIcon } from './FileList'
+import { StatusIcon, pathLabel } from './FileList'
 import { buildEditedHunkPatch, buildPatch, hunkEditText, type HunkSelection, type PatchMode } from '../diff/patch'
 import { discardPatch } from '../actions/undo'
 import { diffCommandFor, formatKeys } from '../keybindings'
@@ -713,7 +713,6 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
   const lineCount = selected.size
   const adds = diff ? diff.hunks.reduce((n, h) => n + h.lines.filter((l) => l.type === 'add').length, 0) : (listed?.additions ?? 0)
   const dels = diff ? diff.hunks.reduce((n, h) => n + h.lines.filter((l) => l.type === 'del').length, 0) : (listed?.deletions ?? 0)
-  const slash = path.lastIndexOf('/')
   const oldPath = diff?.oldPath && diff.oldPath !== path ? diff.oldPath : listed?.oldPath
 
   const chip =
@@ -747,11 +746,7 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
       <div className="dv-head">
         <StatusIcon status={fileStatus(diff, listed?.status)} size={13} />
         <span className="dv-path" title={oldPath ? `${oldPath} → ${path}` : path}>
-          <span>
-            {oldPath && <span className="file-dir">{oldPath} → </span>}
-            {slash >= 0 && <span className="file-dir">{path.slice(0, slash + 1)}</span>}
-            {path.slice(slash + 1)}
-          </span>
+          {pathLabel(path, oldPath)}
         </span>
         {(adds > 0 || dels > 0) && (
           <span className="stats">

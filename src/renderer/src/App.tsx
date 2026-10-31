@@ -27,7 +27,7 @@ import { Splitter } from './ui/Splitter'
 import { DEFAULT_PREFERENCES } from '@shared/types'
 import { WorkspaceView } from './components/WorkspaceView'
 import { useFileDragHint, useOpenRequests } from './actions/openActions'
-import { applyAppearance } from './ui/appearance'
+import { applyAppearance, fontStack } from './ui/appearance'
 // installs the explained git error toasts (with fixes) into the store's `run`
 import './actions/errorActions'
 import { useProgressEvents } from './state/progress'
@@ -39,6 +39,8 @@ export function App() {
   const accentColor = useStore((s) => s.prefs.accentColor)
   const density = useStore((s) => s.prefs.density)
   const fontSize = useStore((s) => s.prefs.fontSize)
+  const uiFont = useStore((s) => s.prefs.uiFont)
+  const monoFont = useStore((s) => s.prefs.monoFont)
   const showLeft = useStore((s) => s.showLeftPanel)
   const showRight = useStore((s) => s.showDetailPanel)
   const leftWidth = useStore((s) => s.prefs.leftPanelWidth)
@@ -63,6 +65,12 @@ export function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--font-size', `${fontSize}px`)
   }, [fontSize])
+
+  useEffect(() => {
+    const s = document.documentElement.style
+    s.setProperty('--font-ui', fontStack(uiFont ?? '', 'var(--font-ui-default)'))
+    s.setProperty('--font-mono', fontStack(monoFont ?? '', 'var(--font-mono-default)'))
+  }, [uiFont, monoFont])
 
   useKeybindings()
   useAutoFetch()

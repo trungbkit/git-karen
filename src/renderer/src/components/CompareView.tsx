@@ -11,7 +11,7 @@ import { Avatar } from '../graph/avatar'
 import { DiffBody, useNewSideLines } from './DiffView'
 import { ImageDiff, isImagePath, isSvgPath } from './ImageDiff'
 import { IGNORE_WHITESPACE_KEY, WRAP_KEY, readLocal, useStoredFlag, writeLocal } from '../diff/settings'
-import { FileList, FileStats, FileViewToggle, fileMenuItems, type FileSelection } from './FileList'
+import { FileList, FileStats, FileViewToggle, fileMenuItems, pathLabel, type FileSelection } from './FileList'
 import { DelayedDiffSkeleton } from '../ui/Skeleton'
 import '../styles/detail.css'
 
@@ -214,17 +214,12 @@ function CompareDiff({ repo, from, to, file }: { repo: RepoTab; from: string; to
     void window.app
       .openInEditor(repo.path, path, line)
       .catch((e: Error) => useStore.getState().toast({ kind: 'error', title: 'Could not open the editor', message: e.message }))
-  const slash = path.lastIndexOf('/')
 
   return (
     <div className="view">
       <div className="dv-head">
         <span className="dv-path" title={file?.oldPath ? `${file.oldPath} → ${path}` : path}>
-          <span>
-            {file?.oldPath && file.oldPath !== path && <span className="file-dir">{file.oldPath} → </span>}
-            {slash >= 0 && <span className="file-dir">{path.slice(0, slash + 1)}</span>}
-            {path.slice(slash + 1)}
-          </span>
+          {pathLabel(path, file?.oldPath)}
         </span>
         <span className="grow" />
         <span className="dv-group">
