@@ -93,10 +93,12 @@ npm run package:mac  # macOS .app and .dmg; pass arm64, x64 or universal
 ```
 
 ## Releasing
-Bump `version` in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, then push a matching tag:
+Bump the version (in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`), commit and tag in one step:
 ```sh
-git tag v0.2.0 && git push origin v0.2.0
+npm run bump -- 1.0.1          # or: patch | minor | major
+git push origin HEAD && git push origin v1.0.1
 ```
+Add `--push` to push the commit and tag right away, or `--no-commit` to only edit the files.
 The [Release workflow](.github/workflows/release.yml) builds macOS (arm64 and x64 `.dmg`), Linux (`.deb`, `.rpm`, `.AppImage`) and Windows (`.exe`, `.msi`) installers and publishes them as a GitHub release. Running the workflow by hand from the Actions tab builds the same installers as workflow artifacts without releasing.
 
 ### macOS signing
