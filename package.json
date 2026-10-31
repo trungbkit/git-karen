@@ -1,7 +1,7 @@
 {
   "name": "karen",
   "productName": "Karen",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A local-first desktop Git client (no account, cloud, team or licensing features).",
   "private": true,
   "license": "MIT",
