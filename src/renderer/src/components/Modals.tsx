@@ -7,6 +7,8 @@ import { KeybindingsModal } from './KeybindingsModal'
 import { WorktreeModal } from './WorktreeModal'
 import { SmartCommitModal, SplitCommitModal } from './SmartCommitModal'
 import { CreatePullRequestModal } from './CreatePullRequestModal'
+import { PullRequestModal } from './PullRequestModal'
+import { JobLogModal } from './JobLogView'
 
 export function Modals() {
   const modal = useStore((s) => s.modal)
@@ -31,6 +33,10 @@ export function Modals() {
       return <SplitCommitModal />
     case 'createPullRequest':
       return <CreatePullRequestModal />
+    case 'pullRequest':
+      return <PullRequestModal />
+    case 'jobLog':
+      return <JobLogModal />
     default:
       return null
   }

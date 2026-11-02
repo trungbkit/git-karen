@@ -161,10 +161,15 @@ async fn env_value(_name: &str) -> Option<String> {
 
 /// Proxy variables exported only by the login shell, for other curl-based clients (hosting integrations).
 pub(crate) async fn proxy_env() -> Vec<(String, String)> {
+    shell_vars(&PROXY_VARS).await
+}
+
+/// The given variables as the login shell exports them, for those this process doesn't have.
+pub(crate) async fn shell_vars(names: &[&str]) -> Vec<(String, String)> {
     let mut env = vec![];
-    for var in PROXY_VARS {
+    for var in names {
         if std::env::var_os(var).is_none() {
-            if let Some(v) = shell_env().await.get(var) {
+            if let Some(v) = shell_env().await.get(*var) {
                 env.push((var.to_string(), v.clone()));
             }
         }

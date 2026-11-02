@@ -92,6 +92,7 @@ pub fn parse_statuses(list: &Value) -> Option<CiStatus> {
             state: job_state(j["status"].as_str().unwrap_or(""), j["allow_failure"].as_bool().unwrap_or(false)),
             url: j["target_url"].as_str().filter(|u| !u.is_empty()).map(String::from),
             description: j["description"].as_str().filter(|d| !d.is_empty()).map(String::from),
+            job_id: None,
         })
         .collect();
     if checks.is_empty() {

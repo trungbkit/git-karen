@@ -3,7 +3,7 @@
 Karen is a local-first desktop Git client. It talks to the system `git` and, optionally, to Git hosts and AI providers using the user's own tokens. It has no account, cloud sync, team features, licensing or telemetry.
 
 ## Scope
-**In scope:** commit graph, branches/tags/stashes/submodules/worktrees/Gitflow/LFS, staging by file, hunk and line, commit (templates, signing, amend), diff (split, word, image), three-way merge tool, interactive rebase, fetch/pull/push, file history and blame, undo of the last git action, command palette and keyboard shortcuts, embedded terminal, hosting integrations (PRs, CI status, issues) and AI commit messages through personal tokens.
+**In scope:** commit graph, branches/tags/stashes/submodules/worktrees/Gitflow/LFS, staging by file, hunk and line, commit (templates, signing, amend), diff (split, word, image), three-way merge tool, interactive rebase, fetch/pull/push, file history and blame, undo of the last git action, command palette and keyboard shortcuts, embedded terminal, hosting integrations (PRs, CI status, issues; on GitHub also review, comments, merge and Actions logs) and AI commit messages through personal tokens.
 
 **Out of scope:** accounts, cloud workspaces, shared patches, team features, licence or trial gating, telemetry, and an auto-updater.
 
@@ -19,6 +19,7 @@ Karen is a local-first desktop Git client. It talks to the system `git` and, opt
 | Merge tool | Own diff3 (`diff/merge3.ts`) | No dependency |
 | Interactive rebase | `GIT_SEQUENCE_EDITOR` set to a command that copies a prepared todo list into place | Lets git drive the rebase |
 | HTTP (hosting, AI) | System `curl`, called from Rust; the `Authorization` header goes through curl's stdin config | No extra TLS stack, honours proxy variables, tokens never reach the webview or the command line |
+| GitHub credentials | A keychain token, or per host `gh auth token` from the GitHub CLI (cached 5 min) | Reuses an existing `gh auth login`; gh only supplies the token, requests still go through curl |
 | Secrets | OS keychain via the `keyring` crate | No tokens in config files |
 
 ## Conventions

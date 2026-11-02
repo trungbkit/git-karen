@@ -1,7 +1,8 @@
 // Preferences > Integrations (plan 07.1, 07.5): personal access tokens per host (kept in the OS keychain, applied
-// immediately), self-hosted hosts, and the active repository's issue link rules (saved with the other preferences).
+// immediately) or, for GitHub hosts, the GitHub CLI's login; self-hosted hosts; and the active repository's issue link
+// rules (saved with the other preferences).
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { HostConfig, HostingAccount, HostingKind, IssueLinkConfig, IssueLinkRule } from '@shared/integrations'
+import type { GhStatus, HostConfig, HostingAccount, HostingKind, IssueLinkConfig, IssueLinkRule } from '@shared/integrations'
 import { useHosting, useRepoHosting } from '../state/hosting'
 import { compileRules, linkify, validateRule } from '../util/issueLinks'
 import { basename } from '../util/format'
@@ -28,6 +29,38 @@ function tokenPage(a: HostingAccount): string | null {
 
 type Status = { state: 'running' | 'ok' | 'error'; message: string }
 
+/** The host gh knows an account by: its web host (an SSH alias of github.com is github.com to gh). */
+function ghHostOf(a: HostingAccount): string {
+  try {
+    return new URL(a.webUrl).host.toLowerCase()
+  } catch {
+    return a.host
+  }
+}
+
+function accountStatus(a: HostingAccount): { text: string; ok: boolean } {
+  if (a.gh) {
+    if (!a.hasToken) return { text: 'GitHub CLI not signed in', ok: false }
+    return { text: a.user ? `Connected as ${a.user} · GitHub CLI` : 'Using GitHub CLI', ok: true }
+  }
+  if (a.hasToken) return { text: a.user ? `Connected as ${a.user}` : 'Token saved', ok: true }
+  return { text: a.apiSupported ? 'Not connected' : 'Web links only', ok: false }
+}
+
+function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      className="issue-link"
+      onClick={(e) => {
+        e.preventDefault()
+        void window.app.openExternal(href)
+      }}
+    >
+      {children}
+    </a>
+  )
+}
+
 function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <div className="field">
@@ -51,9 +84,14 @@ export function IntegrationsSettings({ repo, issueLinks, onIssueLinks }: Props) 
   const [status, setStatus] = useState<Record<string, Status>>({})
   const [newHost, setNewHost] = useState<HostConfig>({ host: '', kind: 'gitlab', apiUrl: '', webUrl: '' })
   const [hostError, setHostError] = useState<string | null>(null)
+  const [gh, setGh] = useState<GhStatus | null>(null)
+  const [ghUsers, setGhUsers] = useState<Record<string, string>>({})
+
+  const loadGh = () => void window.integrations.ghStatus().then(setGh, () => setGh({ installed: false, version: null, accounts: [], error: null }))
 
   useEffect(() => {
     void window.integrations.accounts().then(setAccounts, (e: Error) => setLoadError(e.message))
+    loadGh()
   }, [])
 
   const updated = (list: HostingAccount[]) => {
@@ -101,6 +139,16 @@ export function IntegrationsSettings({ repo, issueLinks, onIssueLinks }: Props) 
     }
   }
 
+  const setGhMode = async (a: HostingAccount, enabled: boolean, user: string | null) => {
+    setHostStatus(a.host, enabled ? { state: 'running', message: 'Asking the GitHub CLI…' } : null)
+    try {
+      updated(await window.integrations.useGh(a.host, enabled, user))
+      if (enabled) await test(a.host)
+    } catch (e) {
+      setHostStatus(a.host, { state: 'error', message: (e as Error).message })
+    }
+  }
+
   const removeHost = async (host: string) => {
     try {
       updated(await window.integrations.removeHost(host))
@@ -123,20 +171,57 @@ export function IntegrationsSettings({ repo, issueLinks, onIssueLinks }: Props) 
     <>
       <span className="hint">
         Pull requests, CI status and pull request creation use your own personal access tokens, sent only to the host they belong to. Tokens are stored in the
-        system keychain, never in a file, and take effect as soon as you save them.
+        system keychain, never in a file, and take effect as soon as you save them. GitHub hosts can use the GitHub CLI’s login (<code>gh auth login</code>) instead.
       </span>
       {loadError && <span className="field-error">{loadError}</span>}
       {accounts?.map((a) => {
         const st = status[a.host]
         const page = tokenPage(a)
+        const head = accountStatus(a)
+        const ghHost = ghHostOf(a)
+        const ghAccounts = gh?.accounts.filter((g) => g.host === ghHost) ?? []
+        // '' = gh's active account
+        const ghUser = ghUsers[a.host] ?? a.ghUser ?? ''
+        const ghPicker = ghAccounts.length > 1 && (
+          <select
+            aria-label="GitHub CLI account"
+            value={ghUser}
+            onChange={(e) => {
+              setGhUsers((m) => ({ ...m, [a.host]: e.target.value }))
+              if (a.gh) void setGhMode(a, true, e.target.value || null)
+            }}
+          >
+            <option value="">Active gh account ({ghAccounts.find((g) => g.active)?.login ?? 'none'})</option>
+            {ghAccounts.map((g) => (
+              <option key={g.login} value={g.login}>
+                {g.login}
+              </option>
+            ))}
+          </select>
+        )
         return (
           <div key={a.host} className="int-account">
             <div className="int-account-head">
               <span className="host">{a.host}</span>
               <span className="hint">{a.builtIn ? a.label : `${a.label} · ${a.apiUrl}`}</span>
-              <span className={`status ${a.hasToken ? 'ok' : ''}`}>{a.hasToken ? (a.user ? `Connected as ${a.user}` : 'Token saved') : a.apiSupported ? 'Not connected' : 'Web links only'}</span>
+              <span className={`status ${head.ok ? 'ok' : ''}`}>{head.text}</span>
             </div>
-            {a.apiSupported && (
+            {a.gh && (
+              <>
+                <div className="int-row">
+                  <span className="int-gh-label">Token from the GitHub CLI{ghPicker ? '' : a.ghUser ? ` (${a.ghUser})` : ''}</span>
+                  {ghPicker}
+                  <button className="btn small" disabled={st?.state === 'running'} onClick={() => void test(a.host)}>
+                    Test connection
+                  </button>
+                  <button className="btn small" onClick={() => void setGhMode(a, false, null)}>
+                    Use a token instead
+                  </button>
+                </div>
+                {a.ghError && !st && <span className="field-error">{a.ghError}</span>}
+              </>
+            )}
+            {a.apiSupported && !a.gh && (
               <div className="int-row">
                 <input
                   type="password"
@@ -161,21 +246,44 @@ export function IntegrationsSettings({ repo, issueLinks, onIssueLinks }: Props) 
               </div>
             )}
             {st && <span className={st.state === 'error' ? 'field-error' : 'hint'}>{st.message}</span>}
-            {a.apiSupported && (
+            {a.apiSupported && !a.gh && (
               <span className="hint">
-                {TOKEN_HINT[a.kind]}{' '}
-                {page && (
-                  <a
-                    className="issue-link"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      void window.app.openExternal(page)
-                    }}
-                  >
-                    Create one…
-                  </a>
-                )}
+                {TOKEN_HINT[a.kind]} {page && <ExternalLink href={page}>Create one…</ExternalLink>}
               </span>
+            )}
+            {a.kind === 'github' && !a.gh && (
+              <div className="int-row">
+                {gh === null ? (
+                  <span className="hint">Looking for the GitHub CLI…</span>
+                ) : !gh.installed ? (
+                  <span className="hint">
+                    Or connect with the GitHub CLI: install <ExternalLink href="https://cli.github.com">gh</ExternalLink>, run <code>gh auth login</code>, then{' '}
+                    <a className="issue-link" onClick={loadGh}>
+                      check again
+                    </a>
+                    .
+                  </span>
+                ) : ghAccounts.length === 0 && !gh.error ? (
+                  <span className="hint">
+                    Or use the GitHub CLI: run <code>gh auth login --hostname {ghHost}</code> in a terminal, then{' '}
+                    <a className="issue-link" onClick={loadGh}>
+                      check again
+                    </a>
+                    .
+                  </span>
+                ) : (
+                  <>
+                    <span className="int-gh-label">
+                      Or use the GitHub CLI{ghAccounts.length === 1 ? ` (signed in as ${ghAccounts[0].login})` : ''}
+                      {gh.error && <span className="hint"> · {gh.error}</span>}
+                    </span>
+                    {ghPicker}
+                    <button className="btn small" disabled={st?.state === 'running'} onClick={() => void setGhMode(a, true, ghUser || null)}>
+                      Use GitHub CLI
+                    </button>
+                  </>
+                )}
+              </div>
             )}
             {!a.builtIn && (
               <div>

@@ -13,9 +13,33 @@ export interface HostingAccount {
   builtIn: boolean
   /** Pull requests, CI and PR creation work (GitHub, GitLab); the others only get web links */
   apiSupported: boolean
+  /** A token is available: saved in the keychain, or from the GitHub CLI */
   hasToken: boolean
   /** Login from the last successful connection test */
   user: string | null
+  /** The token comes from the GitHub CLI (gh) instead of the keychain */
+  gh: boolean
+  /** The gh account used; null for whichever account is active in gh */
+  ghUser: string | null
+  /** Why gh could not give a token, when `gh` is set */
+  ghError: string | null
+}
+
+/** An account the GitHub CLI is signed in to. */
+export interface GhAccount {
+  host: string
+  login: string
+  /** gh's active account for the host */
+  active: boolean
+}
+
+/** What the GitHub CLI (gh) on this machine is signed in to. */
+export interface GhStatus {
+  installed: boolean
+  version: string | null
+  accounts: GhAccount[]
+  /** Why the accounts could not be listed, when gh is installed */
+  error: string | null
 }
 
 /** A self-hosted host. Empty URLs mean the default derived from the host. */
@@ -40,7 +64,7 @@ export interface RepoHosting {
   /** Issue URL with `$1` for the number */
   issueUrl: string
   apiSupported: boolean
-  /** A token is set for the host */
+  /** A token is set for the host (or comes from the GitHub CLI) */
   connected: boolean
 }
 
@@ -51,6 +75,8 @@ export interface CiCheck {
   state: CiState
   url?: string
   description?: string
+  /** The GitHub Actions job behind the check, whose log can be read with `jobLog` */
+  jobId?: number
 }
 
 export interface CiStatus {
@@ -107,6 +133,94 @@ export interface CreatedPullRequest {
   warning: string | null
 }
 
+/** A comment or review in a pull request's conversation. */
+export interface TimelineItem {
+  kind: 'comment' | 'approved' | 'changes_requested' | 'commented' | 'dismissed'
+  author: string
+  body: string
+  /** ISO 8601 */
+  createdAt: string
+  url: string
+  /** Comments on lines of code a review carries */
+  codeComments: number
+}
+
+export type MergeMethod = 'merge' | 'squash' | 'rebase'
+
+/** A GitHub pull request in full: conversation, checks and merge state. */
+export interface PullRequestDetail {
+  number: number
+  title: string
+  body: string
+  url: string
+  state: 'open' | 'closed' | 'merged'
+  draft: boolean
+  author: string
+  headBranch: string
+  headSha: string
+  sameRepo: boolean
+  baseBranch: string
+  additions: number
+  deletions: number
+  changedFiles: number
+  /** 'unknown' while GitHub is still computing it */
+  mergeable: 'mergeable' | 'conflicting' | 'unknown'
+  /** clean, blocked, behind, dirty, unstable, has_hooks, draft, unknown */
+  mergeState: string
+  reviewDecision: 'approved' | 'changes_requested' | 'review_required' | null
+  /** Methods the repository allows */
+  mergeMethods: MergeMethod[]
+  defaultMergeMethod: MergeMethod
+  /** The repository deletes head branches after merging by itself */
+  deleteBranchOnMerge: boolean
+  viewer: string | null
+  checks: CiStatus | null
+  /** Oldest first */
+  timeline: TimelineItem[]
+}
+
+export interface MergeInput {
+  method: MergeMethod
+  title?: string | null
+  message?: string | null
+  /** Merge only if the head is still this commit */
+  sha?: string | null
+  /** Delete the head branch afterwards (never a fork's or the default branch) */
+  deleteBranch: boolean
+}
+
+export interface MergeResult {
+  sha: string | null
+  branchDeleted: boolean
+  warning: string | null
+}
+
+export type ReviewEvent = 'approve' | 'request_changes' | 'comment'
+
+export interface JobStep {
+  number: number
+  name: string
+  status: string
+  conclusion: string | null
+}
+
+/** A GitHub Actions job and its log. */
+export interface JobLog {
+  jobId: number
+  runId: number | null
+  name: string
+  workflow: string | null
+  /** queued, in_progress, completed, … */
+  status: string
+  conclusion: string | null
+  url: string
+  steps: JobStep[]
+  /** Empty until the job has finished */
+  log: string
+  /** Only the end of a longer log is in `log` */
+  truncated: boolean
+}
+
 /** Commit message → link rule. `url` may use $0 (whole match) and $1…$9 (groups). */
 export interface IssueLinkRule {
   pattern: string
@@ -126,6 +240,10 @@ export interface IntegrationsApi {
   removeHost(host: string): Promise<HostingAccount[]>
   /** Store (string) or remove (null) the token for a host in the OS keychain */
   setToken(host: string, token: string | null): Promise<HostingAccount[]>
+  /** What the GitHub CLI is installed as and signed in to */
+  ghStatus(): Promise<GhStatus>
+  /** Take a GitHub host's token from the GitHub CLI (as `user`, or gh's active account when null), or stop (`enabled` false) */
+  useGh(host: string, enabled: boolean, user: string | null): Promise<HostingAccount[]>
   /** Call the API with the stored token; returns who it belongs to */
   test(host: string): Promise<{ user: string; name: string | null }>
   /** Null when the remote isn't on a recognized provider */
@@ -133,6 +251,14 @@ export interface IntegrationsApi {
   pullRequests(repo: string, remote?: string | null): Promise<PullRequestList>
   reviewerSuggestions(repo: string, remote?: string | null): Promise<string[]>
   createPullRequest(repo: string, input: CreatePullRequestInput): Promise<CreatedPullRequest>
+  /** A GitHub pull request with its conversation, checks and merge state */
+  pullRequest(repo: string, remote: string | null, number: number): Promise<PullRequestDetail>
+  commentPullRequest(repo: string, remote: string | null, number: number, body: string): Promise<void>
+  /** Submit a review; `body` is required except to approve */
+  reviewPullRequest(repo: string, remote: string | null, number: number, input: { event: ReviewEvent; body: string }): Promise<void>
+  mergePullRequest(repo: string, remote: string | null, number: number, input: MergeInput): Promise<MergeResult>
+  /** A GitHub Actions job and (once it has finished) its log */
+  jobLog(repo: string, remote: string | null, jobId: number): Promise<JobLog>
   /** Fetch and check out a PR; returns the local branch name */
   checkoutPullRequest(repo: string, remote: string | null, number: number, headBranch: string, sameRepo: boolean): Promise<string>
   /** Fetch a PR's base branch and head without checking anything out; returns the head commit */

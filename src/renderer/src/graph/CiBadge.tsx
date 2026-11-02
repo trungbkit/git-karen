@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'r
 import { createPortal } from 'react-dom'
 import type { CiState, CiStatus } from '@shared/integrations'
 import { useHosting } from '../state/hosting'
+import { useStore } from '../state/store'
 import { Icon } from '../ui/Icon'
 import '../styles/hosting.css'
 
@@ -115,6 +116,19 @@ function CiCard({ status, anchor, onEnter, onLeave, onClose }: { status: CiStatu
               <span>{c.name || '(unnamed)'}</span>
             )}
             {c.description && <span className="ci-card-desc ellipsis">{c.description}</span>}
+            {c.jobId !== undefined && (
+              <a
+                className="ci-card-log"
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault()
+                  onClose()
+                  useStore.getState().setModal({ kind: 'jobLog', jobId: c.jobId! })
+                }}
+              >
+                Log
+              </a>
+            )}
           </div>
         ))}
       </div>

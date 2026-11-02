@@ -112,7 +112,7 @@ function PullRequestRow({ repo, pr }: { repo: RepoTab; pr: PullRequest }) {
     `${pr.headRepo && !pr.sameRepo ? `${pr.headRepo}:` : ''}${pr.headBranch} → ${pr.baseBranch}`,
     `by ${pr.author}${Number.isNaN(updated) ? '' : `, updated ${relativeTime(updated)}`}`,
     pr.reviewers.length ? `Reviewers: ${pr.reviewers.join(', ')}` : '',
-    'Double-click to check out'
+    `Double-click to check out${pr.url.includes('/pull/') ? ' · right-click to review, merge or read check logs' : ''}`
   ]
     .filter(Boolean)
     .join('\n')

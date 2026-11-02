@@ -42,6 +42,8 @@
 .int-account-head .status.ok { color: var(--success); }
 .int-row { display: flex; gap: 6px; align-items: center; }
 .int-row input, .int-row select { flex: 1; min-width: 0; }
+.int-gh-label { flex: 1; min-width: 0; font-size: 12px; color: var(--text-secondary); }
+.int-row:has(select) .int-gh-label { flex: 0 1 auto; }
 .int-rule { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 4px; }
 .int-preview { font-size: 12px; padding: 4px 0; overflow-wrap: anywhere; }
 
@@ -55,3 +57,78 @@
 .g-msg .ci-badge { margin: 0 6px 0 0; }
 .lp-section-header .spin { animation: hosting-spin 0.9s linear infinite; }
 @keyframes hosting-spin { to { transform: rotate(360deg); } }
+
+/* pull request dialog */
+.prd { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.prd-title { display: inline-flex; gap: 6px; min-width: 0; max-width: 100%; }
+.prd-num { color: var(--text-secondary); font-weight: 400; flex: none; }
+.prd-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12px; color: var(--text-secondary); }
+.prd-meta code { font-size: 11px; }
+.prd-state, .prd-review { font-size: 11px; padding: 1px 8px; border-radius: 10px; text-transform: capitalize; border: 1px solid var(--border-strong); color: var(--text); }
+.prd-state-open { background: var(--success); color: var(--text-inverse); border-color: transparent; }
+.prd-state-merged { background: var(--accent); color: var(--text-inverse); border-color: transparent; }
+.prd-state-closed { background: var(--danger); color: var(--text-inverse); border-color: transparent; }
+.prd-review-approved { color: var(--success); border-color: var(--success); }
+.prd-review-changes_requested { color: var(--danger); border-color: var(--danger); }
+.prd-diffstat .add { color: var(--success); }
+.prd-diffstat .del { color: var(--danger); }
+.prd-tabs { padding: 0; margin: 0 -18px; padding-left: 18px; background: transparent; }
+.prd-conv { display: flex; flex-direction: column; gap: 8px; }
+.prd-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.prd-item.prd-approved { border-left: 3px solid var(--success); }
+.prd-item.prd-changes_requested { border-left: 3px solid var(--danger); }
+.prd-item-head { display: flex; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+.prd-kind-approved { color: var(--success); }
+.prd-kind-changes_requested { color: var(--danger); }
+.prd-link { margin-left: auto; font-size: 11px; }
+.prd-compose { display: flex; flex-direction: column; gap: 6px; }
+.prd-compose textarea { min-height: 90px; resize: vertical; font-family: var(--font-ui); }
+.prd-actions .hint { flex: 1; min-width: 0; }
+.prd-checks { display: flex; flex-direction: column; gap: 2px; }
+.prd-checks-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+.prd-check { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 4px; font-size: 12px; min-width: 0; }
+.prd-check:hover { background: var(--bg-hover); }
+.prd-check-name { flex: 0 1 auto; min-width: 60px; }
+.prd-check .muted { min-width: 0; flex: 0 1 auto; }
+.prd-merge { display: flex; flex-direction: column; gap: 10px; }
+.prd-merge textarea { min-height: 70px; resize: vertical; font-family: var(--font-ui); }
+.prd-methods { align-self: flex-start; flex-wrap: wrap; }
+.prd-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.prd-note { display: flex; align-items: center; gap: 6px; }
+.prd-note.ok { color: var(--success); }
+.prd-note.warn { color: var(--warning); }
+.prd-note.block { color: var(--danger); }
+.ci-card-log { margin-left: auto; color: var(--text-accent); text-decoration: none; flex: none; }
+.ci-card-log:hover { text-decoration: underline; }
+
+/* GitHub Actions job log */
+.jl { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.jl-head, .jl-tools { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.jl-title { font-weight: 600; min-width: 0; }
+.jl-status { font-size: 11px; color: var(--text-secondary); text-transform: capitalize; flex: none; }
+.jl-spacer { flex: 1; }
+.jl-steps { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-secondary); }
+.jl-step { display: inline-flex; align-items: center; gap: 4px; }
+.jl-search { width: 220px; }
+.jl-count { font-size: 11px; color: var(--text-secondary); min-width: 54px; }
+.jl-log {
+  height: 56vh; overflow: auto; background: var(--bg-app, var(--bg-panel)); border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; padding: 4px 0; user-select: text;
+}
+.jl-line { display: flex; gap: 8px; padding: 0 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.jl-line.nested .jl-text { padding-left: 16px; }
+.jl-n { flex: none; width: 52px; text-align: right; color: var(--text-disabled); user-select: none; }
+.jl-time { flex: none; color: var(--text-disabled); }
+.jl-text { min-width: 0; flex: 1; }
+.jl-group { cursor: pointer; font-weight: 600; align-items: center; }
+.jl-group:hover { background: var(--bg-hover); }
+.jl-group.has-error .jl-text { color: var(--danger); }
+.jl-error { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.jl-warning { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+.jl-notice .jl-text { color: var(--text-accent); }
+.jl-command .jl-text { color: var(--text-accent); }
+.jl-debug .jl-text, .jl-section .jl-text { color: var(--text-secondary); }
+.jl-line.current { outline: 1px solid var(--accent); outline-offset: -1px; }
+.jl-line mark { background: color-mix(in srgb, var(--warning) 45%, transparent); color: inherit; border-radius: 2px; }
+.jl-empty { padding: 8px 12px; color: var(--text-secondary); font-family: var(--font-ui); }
+.jl .spin, .modal-footer .spin { animation: hosting-spin 0.9s linear infinite; }

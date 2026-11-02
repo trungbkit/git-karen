@@ -15,6 +15,8 @@ Each feature below has unit or integration tests, but nobody has clicked through
 - Image diff in all three modes.
 - Expanded diff context, blame going back in history, and opening the editor at a line.
 - GitHub and GitLab with real tokens: PR list, create PR, CI badges, PR checkout.
+- GitHub through the GitHub CLI (Preferences > Integrations > Use GitHub CLI), including picking one of several gh accounts and a packaged app launched from Finder (gh on the PATH).
+- GitHub pull request dialog (right-click a PR): comment, approve, request changes, merge with each method and branch deletion, and Actions job logs from the Checks tab and from a CI badge in the graph (long logs, running jobs, expired logs).
 - `karen .` from a terminal and `karen://` links, both using a packaged `.app`.
 - Drag and drop of files and folders, the "behind" banner after auto-fetch, branch prefix suggestions.
 - Themes (Nord, Solarized, custom accent, following the system theme), compact density, skeletons, progress bars, error toasts with action buttons, focus rings, `prefers-reduced-motion`.

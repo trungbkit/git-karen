@@ -4,9 +4,15 @@
 // - Tokens live in the OS keychain (secrets.rs), keyed by host. integrations.json only holds the self-hosted host
 //   list and the login names a connection test returned. Tokens never cross into the webview: it learns whether a
 //   host has one, nothing more.
+// - GitHub hosts can take their token from the GitHub CLI instead (gh.rs): `gh auth token` is asked for it, so a
+//   `gh auth login` is all the setup needed. integrations.json records which hosts do this and as which gh account.
 // - Every API call is made here, through curl (http.rs).
+// - GitHub pull requests can also be read in full, commented on, reviewed and merged, and their Actions job logs
+//   read (github_pr.rs).
 // - The provider comes from the remote URL (remote.rs): the public hosts are built in, self-hosted ones configured.
+pub mod gh;
 mod github;
+pub mod github_pr;
 mod gitlab;
 pub mod http;
 pub mod remote;
@@ -37,6 +43,8 @@ const MAX_CI_SHAS: usize = 100;
 const MAX_CI_CACHE: usize = 20_000;
 /// The public hosts shown in Preferences even before a token is added (the others are configured)
 const BUILTIN_HOSTS: [&str; 2] = ["github.com", "gitlab.com"];
+/// How long a token read from the GitHub CLI is reused before gh is asked again (it may log out or switch accounts)
+const GH_TOKEN_TTL: Duration = Duration::from_secs(300);
 
 // ------------------------------------------------------------------ model
 
@@ -64,6 +72,9 @@ pub struct CiCheck {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// The GitHub Actions job behind the check, whose log can be read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<u64>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -140,9 +151,16 @@ pub struct Account {
     pub web_url: String,
     pub built_in: bool,
     pub api_supported: bool,
+    /// A token is available: saved in the keychain, or from the GitHub CLI
     pub has_token: bool,
     /// Login name from the last successful connection test
     pub user: Option<String>,
+    /// The token comes from the GitHub CLI
+    pub gh: bool,
+    /// The gh account used (None: whichever account is active in gh)
+    pub gh_user: Option<String>,
+    /// Why the GitHub CLI could not give a token, when `gh` is set
+    pub gh_error: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -159,7 +177,7 @@ pub struct RepoHosting {
     /// Issue URL with `$1` standing for the number
     pub issue_url: String,
     pub api_supported: bool,
-    /// A token is set for the host
+    /// A token is set for the host (or comes from the GitHub CLI)
     pub connected: bool,
 }
 
@@ -175,6 +193,8 @@ struct IntegrationsFile {
     hosts: Vec<HostConfig>,
     /// host → login from the last connection test (not a secret)
     users: BTreeMap<String, String>,
+    /// GitHub hosts whose token comes from the GitHub CLI → the gh account to use (None: gh's active account)
+    gh: BTreeMap<String, Option<String>>,
 }
 
 struct CiEntry {
@@ -325,6 +345,11 @@ pub struct Integrations {
     ci: Mutex<HashMap<String, HashMap<String, CiEntry>>>,
     limits: Mutex<HashMap<String, u64>>,
     env: OnceCell<Vec<(String, String)>>,
+    /// The gh executable
+    gh_program: String,
+    gh_env: OnceCell<Vec<(String, String)>>,
+    /// Tokens read from gh, by host, with when they were read
+    gh_tokens: Mutex<HashMap<String, (String, Instant)>>,
 }
 
 async fn git_out(repo: &str, args: &[&str]) -> Result<String, String> {
@@ -424,6 +449,9 @@ impl Integrations {
             ci: Mutex::default(),
             limits: Mutex::default(),
             env: OnceCell::new(),
+            gh_program: gh::program(),
+            gh_env: OnceCell::new(),
+            gh_tokens: Mutex::default(),
         }
     }
 
@@ -441,8 +469,50 @@ impl Integrations {
         self.env.get_or_init(crate::ai::proxy_env).await
     }
 
+    /// What gh is run with: the proxy and gh variables the login shell exports.
+    async fn gh_env(&self) -> &[(String, String)] {
+        self.gh_env
+            .get_or_init(|| async {
+                let mut env = crate::ai::proxy_env().await;
+                env.extend(crate::ai::shell_vars(&gh::GH_VARS).await);
+                env
+            })
+            .await
+    }
+
     fn hosts(&self) -> Vec<HostConfig> {
         self.data.lock().unwrap().hosts.clone()
+    }
+
+    /// The gh account a host's token comes from: Some(None) for gh's active account, None when it uses a token.
+    fn gh_link(&self, host: &str) -> Option<Option<String>> {
+        self.data.lock().unwrap().gh.get(host).cloned()
+    }
+
+    /// The host name gh knows the provider by (its web host: an SSH alias of github.com is github.com to gh).
+    fn gh_hostname(provider: &Provider) -> String {
+        http::host_of(&provider.web_url).to_ascii_lowercase()
+    }
+
+    async fn gh_token(&self, provider: &Provider, user: Option<&str>) -> Result<String, String> {
+        if let Some((t, at)) = self.gh_tokens.lock().unwrap().get(&provider.host) {
+            if at.elapsed() < GH_TOKEN_TTL {
+                return Ok(t.clone());
+            }
+        }
+        let t = gh::token(&self.gh_program, &Self::gh_hostname(provider), user, self.gh_env().await).await?;
+        self.gh_tokens.lock().unwrap().insert(provider.host.clone(), (t.clone(), Instant::now()));
+        Ok(t)
+    }
+
+    /// Forget what was learned with the previous credential of a host.
+    fn reset_host(&self, host: &str) {
+        self.tokens.lock().unwrap().remove(host);
+        self.gh_tokens.lock().unwrap().remove(host);
+        self.viewers.lock().unwrap().remove(host);
+        self.limits.lock().unwrap().remove(host);
+        self.data.lock().unwrap().users.remove(host);
+        self.ci.lock().unwrap().clear();
     }
 
     /// The provider a token for `host` is used with.
@@ -454,7 +524,16 @@ impl Integrations {
         BUILTIN_HOSTS.contains(&host.as_str()).then(|| remote::builtin_provider(&host)).flatten()
     }
 
+    /// The token for a host: from the GitHub CLI when the host is set to use it, else from the keychain.
     async fn token(&self, host: &str) -> Result<Option<String>, String> {
+        if let Some(user) = self.gh_link(host) {
+            let provider = self.provider_for_host(host).ok_or_else(|| format!("Unknown host: {host}"))?;
+            return self.gh_token(&provider, user.as_deref()).await.map(Some);
+        }
+        self.keychain_token(host).await
+    }
+
+    async fn keychain_token(&self, host: &str) -> Result<Option<String>, String> {
         if let Some(t) = self.tokens.lock().unwrap().get(host) {
             return Ok(t.clone());
         }
@@ -468,8 +547,9 @@ impl Integrations {
         if !provider.kind.api_supported() {
             return Err(format!("{} is not supported yet; only web links are available.", provider.kind.label()));
         }
-        let token = self.token(&provider.host).await?.ok_or_else(|| {
-            format!("No {} token for {}. Add one in Preferences > Integrations.", provider.kind.label(), provider.host)
+        let token = self.token(&provider.host).await?.ok_or_else(|| match provider.kind {
+            Kind::Github => format!("No GitHub token for {}. Add one, or use the GitHub CLI, in Preferences > Integrations.", provider.host),
+            k => format!("No {} token for {}. Add one in Preferences > Integrations.", k.label(), provider.host),
         })?;
         Ok(Api { provider, token, env: self.env().await, limits: &self.limits })
     }
@@ -482,9 +562,16 @@ impl Integrations {
         providers.extend(self.hosts().iter().map(|h| (remote::configured_provider(h), false)));
         let mut out = vec![];
         for (p, built_in) in providers {
+            let gh_link = self.gh_link(&p.host);
             // an unreadable keychain entry shows as "no token" rather than failing the whole list
-            let has_token = self.token(&p.host).await.ok().flatten().is_some();
+            let (has_token, gh_error) = match self.token(&p.host).await {
+                Ok(t) => (t.is_some(), None),
+                Err(e) => (false, gh_link.is_some().then_some(e)),
+            };
             out.push(Account {
+                gh: gh_link.is_some(),
+                gh_user: gh_link.flatten(),
+                gh_error,
                 user: users.get(&p.host).cloned(),
                 host: p.host,
                 kind: p.kind,
@@ -531,6 +618,7 @@ impl Integrations {
 
     pub async fn remove_host(&self, host: &str) -> Result<(), String> {
         self.set_token(host, None).await?;
+        self.data.lock().unwrap().gh.remove(host);
         self.data.lock().unwrap().hosts.retain(|h| h.host != host);
         self.save()
     }
@@ -550,17 +638,50 @@ impl Integrations {
         })
         .await
         .map_err(|e| e.to_string())??;
+        let using_gh = self.gh_link(host).is_some();
+        // saving a token means using it; removing one leaves a GitHub CLI connection alone
+        if token.is_some() || !using_gh {
+            self.reset_host(host);
+            self.data.lock().unwrap().gh.remove(host);
+        }
         self.tokens.lock().unwrap().insert(host.to_string(), token);
-        self.viewers.lock().unwrap().remove(host);
-        self.limits.lock().unwrap().remove(host);
-        self.data.lock().unwrap().users.remove(host);
-        self.ci.lock().unwrap().clear();
+        self.save()
+    }
+
+    /// What the GitHub CLI is signed in to.
+    pub async fn gh_status(&self) -> gh::GhStatus {
+        gh::status(&self.gh_program, self.gh_env().await).await
+    }
+
+    /// Take a GitHub host's token from the GitHub CLI (as `user`, or gh's active account), or stop doing so (`enabled`
+    /// false: a token saved in the keychain is used again). Fails when gh can't give a token for the host.
+    pub async fn use_gh(&self, host: &str, enabled: bool, user: Option<String>) -> Result<(), String> {
+        let provider = self.provider_for_host(host).ok_or_else(|| format!("Unknown host: {host}"))?;
+        if enabled {
+            if provider.kind != Kind::Github {
+                return Err(format!("The GitHub CLI only works with GitHub hosts; {host} is {}.", provider.kind.label()));
+            }
+            let user = user.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+            if let Some(u) = &user {
+                safe_name(u, "GitHub account")?;
+            }
+            self.gh_tokens.lock().unwrap().remove(&provider.host);
+            // fail now, not on the first request, when gh isn't installed or signed in
+            gh::token(&self.gh_program, &Self::gh_hostname(&provider), user.as_deref(), self.gh_env().await).await?;
+            self.reset_host(&provider.host);
+            self.data.lock().unwrap().gh.insert(provider.host.clone(), user);
+        } else {
+            self.reset_host(&provider.host);
+            self.data.lock().unwrap().gh.remove(&provider.host);
+        }
         self.save()
     }
 
     /// Call the API as the token's user; remembers the login name.
     pub async fn test(&self, host: &str) -> Result<Viewer, String> {
         let provider = self.provider_for_host(host).ok_or_else(|| format!("Unknown host: {host}"))?;
+        // read the GitHub CLI's token again: the account may have changed since
+        self.gh_tokens.lock().unwrap().remove(&provider.host);
         let api = self.api(&provider).await?;
         let viewer = match provider.kind {
             Kind::Github => github::viewer(&api).await?,
@@ -670,6 +791,40 @@ impl Integrations {
         }
     }
 
+    /// The repository on GitHub, for what only GitHub supports so far.
+    async fn github_repo(&self, repo: &str, remote: Option<String>, what: &str) -> Result<RepoRef, String> {
+        let (_, r) = self.repo_ref(repo, remote).await?;
+        if r.provider.kind != Kind::Github {
+            return Err(format!("{what} works with GitHub only for now; open {} on the web.", r.web_url));
+        }
+        Ok(r)
+    }
+
+    pub async fn pull_request(&self, repo: &str, remote: Option<String>, number: u64) -> Result<github_pr::PullRequestDetail, String> {
+        let r = self.github_repo(repo, remote, "Pull request details").await?;
+        github_pr::pull_request(&self.api(&r.provider).await?, &r, number).await
+    }
+
+    pub async fn comment_pull_request(&self, repo: &str, remote: Option<String>, number: u64, body: String) -> Result<(), String> {
+        let r = self.github_repo(repo, remote, "Commenting").await?;
+        github_pr::comment(&self.api(&r.provider).await?, &r, number, &body).await
+    }
+
+    pub async fn review_pull_request(&self, repo: &str, remote: Option<String>, number: u64, input: github_pr::ReviewInput) -> Result<(), String> {
+        let r = self.github_repo(repo, remote, "Reviewing").await?;
+        github_pr::review(&self.api(&r.provider).await?, &r, number, &input).await
+    }
+
+    pub async fn merge_pull_request(&self, repo: &str, remote: Option<String>, number: u64, input: github_pr::MergeInput) -> Result<github_pr::MergeResult, String> {
+        let r = self.github_repo(repo, remote, "Merging").await?;
+        github_pr::merge(&self.api(&r.provider).await?, &r, number, &input).await
+    }
+
+    pub async fn job_log(&self, repo: &str, remote: Option<String>, job_id: u64) -> Result<github_pr::JobLog, String> {
+        let r = self.github_repo(repo, remote, "Reading Actions logs").await?;
+        github_pr::job_log(&self.api(&r.provider).await?, &r, job_id).await
+    }
+
     /// Fetch a PR's head and check it out. Same-repository PRs check out their real branch (tracking the remote);
     /// fork PRs go to `pr/<n>` (GitHub) or `mr/<n>` (GitLab) from the provider's read-only PR ref. Never forces:
     /// a local `pr/<n>` with commits of its own makes the fetch fail instead of losing them.
@@ -744,10 +899,20 @@ impl Integrations {
                 v(self.accounts().await?)
             }
             "test" => v(self.test(&a.get::<String>(0)?).await?),
+            "ghStatus" => v(self.gh_status().await),
+            "useGh" => {
+                self.use_gh(&a.get::<String>(0)?, a.get(1)?, a.get(2)?).await?;
+                v(self.accounts().await?)
+            }
             "repoInfo" => v(self.repo_info(&a.get::<String>(0)?, a.get(1)?).await?),
             "pullRequests" => v(self.pull_requests(&a.get::<String>(0)?, a.get(1)?).await?),
             "reviewerSuggestions" => v(self.reviewer_suggestions(&a.get::<String>(0)?, a.get(1)?).await?),
             "createPullRequest" => v(self.create_pull_request(&a.get::<String>(0)?, a.get(1)?).await?),
+            "pullRequest" => v(self.pull_request(&a.get::<String>(0)?, a.get(1)?, a.get(2)?).await?),
+            "commentPullRequest" => v(self.comment_pull_request(&a.get::<String>(0)?, a.get(1)?, a.get(2)?, a.get(3)?).await?),
+            "reviewPullRequest" => v(self.review_pull_request(&a.get::<String>(0)?, a.get(1)?, a.get(2)?, a.get(3)?).await?),
+            "mergePullRequest" => v(self.merge_pull_request(&a.get::<String>(0)?, a.get(1)?, a.get(2)?, a.get(3)?).await?),
+            "jobLog" => v(self.job_log(&a.get::<String>(0)?, a.get(1)?, a.get(2)?).await?),
             "checkoutPullRequest" => v(self
                 .checkout_pull_request(&a.get::<String>(0)?, a.get(1)?, a.get(2)?, a.get::<Option<String>>(3)?.unwrap_or_default(), a.get::<Option<bool>>(4)?.unwrap_or(false))
                 .await?),
@@ -823,6 +988,52 @@ mod tests {
         s.save_host(HostConfig { host: "git.corp.io".into(), kind: Kind::Github, ..Default::default() }).unwrap();
         let reloaded = service(dir.path());
         assert_eq!(reloaded.hosts()[0].host, "git.corp.io");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn takes_github_tokens_from_the_github_cli() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = service(dir.path());
+        s.gh_program = gh::tests::fake_gh(dir.path());
+        s.gh_env.set(vec![]).unwrap();
+        // a GitHub Enterprise host gh isn't signed in to, and an SSH alias of github.com
+        let (api_url, seen) = http::tests::serve(vec![("200 OK", "", r#"{"login":"work","name":"Work"}"#.into())]);
+        s.save_host(HostConfig { host: "github-work".into(), kind: Kind::Github, api_url, web_url: "https://github.com".into() }).unwrap();
+        s.save_host(HostConfig { host: "ghe.corp.io".into(), kind: Kind::Github, ..Default::default() }).unwrap();
+        s.save_host(HostConfig { host: "gitlab.corp.io".into(), kind: Kind::Gitlab, ..Default::default() }).unwrap();
+
+        let st = s.gh_status().await;
+        assert!(st.installed && st.accounts.len() == 2);
+
+        assert!(s.use_gh("ghe.corp.io", true, None).await.unwrap_err().contains("gh auth login --hostname ghe.corp.io"));
+        assert!(s.use_gh("gitlab.corp.io", true, None).await.unwrap_err().contains("only works with GitHub"));
+        assert!(s.use_gh("github-work", true, Some("--evil".into())).await.is_err());
+
+        s.set_token("github-work", Some("ghp_KEYCHAIN".into())).await.unwrap();
+        s.use_gh("github-work", true, Some("work".into())).await.unwrap();
+        let accounts = s.accounts().await.unwrap();
+        let work = accounts.iter().find(|a| a.host == "github-work").unwrap();
+        assert!(work.gh && work.has_token && work.gh_error.is_none());
+        assert_eq!(work.gh_user.as_deref(), Some("work"));
+        // gh is asked for github.com (the alias's web host) as the chosen account, and that token is sent
+        assert_eq!(s.test("github-work").await.unwrap().user, "work");
+        assert!(seen.lock().unwrap()[0].contains("Authorization: Bearer gho_WORK"));
+        let file = std::fs::read_to_string(dir.path().join("integrations.json")).unwrap();
+        assert!(!file.contains("gho_") && file.contains("\"github-work\": \"work\""));
+
+        // removing the keychain token keeps gh; stopping gh brings the keychain token back
+        s.set_token("github-work", None).await.unwrap();
+        assert!(s.gh_link("github-work").is_some());
+        s.set_token("github-work", Some("ghp_KEYCHAIN".into())).await.unwrap();
+        assert!(s.gh_link("github-work").is_none(), "saving a token switches back to it");
+        s.use_gh("github-work", true, None).await.unwrap();
+        assert_eq!(s.token("github-work").await.unwrap().as_deref(), Some("gho_OCTO"));
+        s.use_gh("github-work", false, None).await.unwrap();
+        assert_eq!(s.token("github-work").await.unwrap().as_deref(), Some("ghp_KEYCHAIN"));
+        // the choice survives a restart
+        s.use_gh("github.com", true, None).await.unwrap();
+        assert_eq!(service(dir.path()).gh_link("github.com"), Some(None));
     }
 
     #[tokio::test]

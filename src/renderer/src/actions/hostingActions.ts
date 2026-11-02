@@ -22,7 +22,12 @@ function headRef(repo: RepoTab, info: RepoHosting, pr: PullRequest) {
   return repo.refs.find((r) => r.type === 'remote' && r.name === `${info.remote}/${pr.headBranch}`)
 }
 
-export async function checkoutPullRequest(repo: RepoTab, pr: PullRequest) {
+/** Open a GitHub pull request in the app: conversation and review, checks and their logs, merge. */
+export function openPullRequest(number: number, tab?: 'conversation' | 'checks' | 'merge') {
+  useStore.getState().setModal({ kind: 'pullRequest', number, tab })
+}
+
+export async function checkoutPullRequest(repo: RepoTab, pr: Pick<PullRequest, 'number' | 'headBranch' | 'sameRepo'>) {
   const info = useHosting.getState().info[repo.path]
   if (!info) return
   const s = useStore.getState()
@@ -53,7 +58,13 @@ export function pullRequestMenuItems(repo: RepoTab, pr: PullRequest): MenuItem[]
   const info = useHosting.getState().info[repo.path]
   const head = info && headRef(repo, info, pr)
   const base = info && repo.refs.find((r) => r.type === 'remote' && r.name === `${info.remote}/${pr.baseBranch}`)
+  const github = info?.kind === 'github'
   return [
+    github && { label: 'Details…', onClick: () => openPullRequest(pr.number) },
+    github && { label: 'Comment or review…', onClick: () => openPullRequest(pr.number, 'conversation') },
+    github && !!pr.checks && { label: 'Checks and logs…', onClick: () => openPullRequest(pr.number, 'checks') },
+    github && { label: 'Merge…', onClick: () => openPullRequest(pr.number, 'merge') },
+    github && 'separator',
     { label: `Checkout #${pr.number}`, onClick: () => void checkoutPullRequest(repo, pr) },
     { label: 'Open on web', onClick: () => void window.app.openExternal(pr.url) },
     { label: 'Review with AI', onClick: () => reviewWithAi(repo, pr) },

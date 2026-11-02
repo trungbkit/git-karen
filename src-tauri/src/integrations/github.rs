@@ -10,7 +10,7 @@ use super::{enc, pr_body, Api, CiCheck, CiState, CiStatus, CreatePrInput, Create
 /// Commits per CI query; GitHub caps a query's node count, and 50 commits × 50 checks stays well under it
 const CI_BATCH: usize = 50;
 
-async fn graphql(api: &Api<'_>, query: &str, variables: Value) -> Result<Value, String> {
+pub(super) async fn graphql(api: &Api<'_>, query: &str, variables: Value) -> Result<Value, String> {
     let body = json!({ "query": query, "variables": variables });
     let res = api.json("POST", &github_graphql_url(&api.provider.api_url), Some(&body)).await?;
     let errors: Vec<String> = res["errors"].as_array().map(|a| a.iter().filter_map(|e| e["message"].as_str().map(String::from)).collect()).unwrap_or_default();
@@ -20,7 +20,7 @@ async fn graphql(api: &Api<'_>, query: &str, variables: Value) -> Result<Value, 
     Ok(res["data"].clone())
 }
 
-fn s(v: &Value) -> String {
+pub(super) fn s(v: &Value) -> String {
     v.as_str().unwrap_or_default().to_string()
 }
 
@@ -152,10 +152,12 @@ pub fn parse_ci(commit: &Value) -> Option<CiStatus> {
                 .filter(|n| n.is_object())
                 .map(|n| {
                     let is_status = n["__typename"] == "StatusContext";
+                    let url = (if is_status { &n["targetUrl"] } else { &n["detailsUrl"] }).as_str().filter(|u| !u.is_empty()).map(String::from);
                     CiCheck {
                         name: s(if is_status { &n["context"] } else { &n["name"] }),
                         state: check_state(n),
-                        url: (if is_status { &n["targetUrl"] } else { &n["detailsUrl"] }).as_str().filter(|u| !u.is_empty()).map(String::from),
+                        job_id: if is_status { None } else { url.as_deref().and_then(super::github_pr::actions_job_id) },
+                        url,
                         description: n["description"].as_str().filter(|d| !d.is_empty()).map(String::from),
                     }
                 })

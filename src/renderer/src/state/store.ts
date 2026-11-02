@@ -95,6 +95,10 @@ export type ModalState =
   | { kind: 'smartCommit'; prOnly?: boolean }
   /** Create a pull request through the hosting API (or open the provider's page without a token) */
   | { kind: 'createPullRequest'; head?: string; base?: string }
+  /** A GitHub pull request: conversation, review, checks with their logs, merge */
+  | { kind: 'pullRequest'; number: number; tab?: 'conversation' | 'checks' | 'merge' }
+  /** The log of a GitHub Actions job */
+  | { kind: 'jobLog'; jobId: number }
   /** Let the AI group all uncommitted changes into several commits, made one after another */
   | { kind: 'splitCommit' }
 
