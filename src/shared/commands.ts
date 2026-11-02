@@ -43,6 +43,7 @@ export const COMMANDS = {
   focusNotification: 'view:focusNotification',
   closeView: 'view:close',
   preferences: 'app:preferences',
+  checkForUpdates: 'app:checkForUpdates',
   refresh: 'app:refresh'
 } as const
 

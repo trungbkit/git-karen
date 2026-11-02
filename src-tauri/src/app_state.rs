@@ -93,6 +93,10 @@ impl AppStateStore {
         self.state.preferences.get(key).and_then(Value::as_str).map(String::from)
     }
 
+    pub fn preference_bool(&self, key: &str) -> Option<bool> {
+        self.state.preferences.get(key).and_then(Value::as_bool)
+    }
+
     pub fn set_open_tabs(&mut self, tabs: Vec<String>, active: Option<String>) -> Result<(), String> {
         self.state.open_tabs = tabs;
         self.state.active_tab = active;

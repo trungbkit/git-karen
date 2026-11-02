@@ -16,6 +16,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let mac = cfg!(target_os = "macos");
     let i = |id: &str, label: &str, accel: &str| item(app, id, label, (!accel.is_empty()).then_some(accel));
     let prefs = i("app:preferences", "Preferences…", "CmdOrCtrl+Comma")?;
+    let updates = i("app:checkForUpdates", "Check for Updates…", "")?;
 
     let mut file = SubmenuBuilder::new(app, "File")
         .item(&i("tab:new", "New Tab", "CmdOrCtrl+T")?)
@@ -104,10 +105,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     window = if mac { window.separator().bring_all_to_front() } else { window.close_window() };
     let window = window.build()?;
 
-    let help = SubmenuBuilder::new(app, "Help")
+    let mut help = SubmenuBuilder::new(app, "Help")
         .item(&MenuItem::with_id(app, "view:toggleKeyBindings:help", "Keyboard Shortcuts", true, None::<&str>)?)
-        .item(&i("kc:gitDocs", "Git Documentation", "")?)
-        .build()?;
+        .item(&i("kc:gitDocs", "Git Documentation", "")?);
+    if !mac {
+        help = help.separator().item(&updates);
+    }
+    let help = help.build()?;
 
     let mut top: Vec<Submenu<Wry>> = Vec::new();
     if mac {
@@ -115,6 +119,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         top.push(
             SubmenuBuilder::new(app, &name)
                 .about(Some(AboutMetadata { name: Some(name.clone()), ..Default::default() }))
+                .item(&updates)
                 .separator()
                 .item(&prefs)
                 .separator()

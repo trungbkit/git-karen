@@ -7,6 +7,7 @@ import { defaultBranch, openCompare } from './actions/compareActions'
 import { focusGraphFilter, moveGraphSelection } from './graph/nav'
 import { newSession, toggleTerminal } from './state/terminals'
 import { undoLatest } from './actions/undo'
+import { checkForUpdatesNow } from './state/updates'
 
 export interface KeyBinding {
   /** e.g. "mod+shift+p"; mod = Cmd on macOS, Ctrl elsewhere */
@@ -143,6 +144,8 @@ export function dispatch(command: string): void {
       return s.setModal(s.modal?.kind === 'keybindings' ? null : { kind: 'keybindings' })
     case COMMANDS.preferences:
       return s.setModal({ kind: 'preferences' })
+    case COMMANDS.checkForUpdates:
+      return void checkForUpdatesNow()
     case COMMANDS.focusNotification: {
       // its first button (Undo, a fix for an error), else its close button
       const toasts = document.querySelectorAll<HTMLElement>('.toast')

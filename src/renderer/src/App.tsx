@@ -31,6 +31,7 @@ import { applyAppearance, fontStack } from './ui/appearance'
 // installs the explained git error toasts (with fixes) into the store's `run`
 import './actions/errorActions'
 import { useProgressEvents } from './state/progress'
+import { useUpdateEvents } from './state/updates'
 
 export function App() {
   const init = useStore((s) => s.init)
@@ -76,6 +77,7 @@ export function App() {
   useAutoFetch()
   useOpenRequests()
   useProgressEvents()
+  useUpdateEvents()
   const draggingFiles = useFileDragHint()
   const workspaceTab = useStore((s) => s.activeTab === WORKSPACE_TAB)
 

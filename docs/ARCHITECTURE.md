@@ -5,7 +5,7 @@ Karen is a local-first desktop Git client. It talks to the system `git` and, opt
 ## Scope
 **In scope:** commit graph, branches/tags/stashes/submodules/worktrees/Gitflow/LFS, staging by file, hunk and line, commit (templates, signing, amend), diff (split, word, image), three-way merge tool, interactive rebase, fetch/pull/push, file history and blame, undo of the last git action, command palette and keyboard shortcuts, embedded terminal, hosting integrations (PRs, CI status, issues; on GitHub also review, comments, merge and Actions logs) and AI commit messages through personal tokens.
 
-**Out of scope:** accounts, cloud workspaces, shared patches, team features, licence or trial gating, telemetry, and an auto-updater.
+**Out of scope:** accounts, cloud workspaces, shared patches, team features, licence or trial gating and telemetry. The updater only downloads public GitHub releases; it sends nothing about the user.
 
 ## Design choices
 | Area | Choice | Why |
@@ -21,6 +21,7 @@ Karen is a local-first desktop Git client. It talks to the system `git` and, opt
 | HTTP (hosting, AI) | System `curl`, called from Rust; the `Authorization` header goes through curl's stdin config | No extra TLS stack, honours proxy variables, tokens never reach the webview or the command line |
 | GitHub credentials | A keychain token, or per host `gh auth token` from the GitHub CLI (cached 5 min) | Reuses an existing `gh auth login`; gh only supplies the token, requests still go through curl |
 | Secrets | OS keychain via the `keyring` crate | No tokens in config files |
+| Updates | `tauri-plugin-updater` driven from Rust (`updater.rs`): `latest.json` on the latest GitHub release, packages signed with minisign (`requireSignedVersion`). Checks 15 s after launch and every 6 h, downloads in the background, installs on restart | Releases stay plain GitHub releases; a tampered manifest cannot install an unsigned or older build |
 
 ## Conventions
 - New git commands live in `src-tauri/src/git/`. Declare them in `src/shared/commands.ts` and `src/shared/types.ts`, and expose them in `src/renderer/src/platform/bridge.ts`.

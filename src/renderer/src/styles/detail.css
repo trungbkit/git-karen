@@ -260,6 +260,7 @@
 .cli-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .cli-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cli-ok { display: inline-flex; align-items: center; gap: 5px; color: var(--success); }
+.update-error { color: var(--danger); }
 .cli-error { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--danger); }
 .cli-cmd { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); }
 .cli-cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; user-select: text; }

@@ -54,7 +54,8 @@ const COMMAND_LABELS: { command: string; label: string; icon: IconName; needsRep
   { command: COMMANDS.toggleLeftPanel, label: 'Toggle left panel', icon: 'chevron-right' },
   { command: COMMANDS.toggleDetailPanel, label: 'Toggle detail panel', icon: 'chevron-right' },
   { command: COMMANDS.toggleKeyBindings, label: 'Keyboard shortcuts', icon: 'dots' },
-  { command: COMMANDS.preferences, label: 'Preferences', icon: 'settings' }
+  { command: COMMANDS.preferences, label: 'Preferences', icon: 'settings' },
+  { command: COMMANDS.checkForUpdates, label: 'Check for updates', icon: 'refresh' }
 ]
 
 function commandItems(repo: RepoTab | null): PaletteItem[] {

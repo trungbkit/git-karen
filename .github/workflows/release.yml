@@ -1,6 +1,8 @@
 # Builds Karen for macOS, Linux and Windows.
 # Pushing a tag vX.Y.Z (matching the version in src-tauri/tauri.conf.json) creates a draft
 # GitHub release, uploads every installer to it, and publishes it once all builds pass.
+# Release builds are signed for the in-app updater (TAURI_SIGNING_PRIVATE_KEY secret) and the release gets the
+# latest.json manifest the updater reads.
 # Running the workflow by hand builds the same installers as workflow artifacts, without a release.
 name: Release
 
@@ -169,12 +171,36 @@ jobs:
             echo "::warning::no notarization credentials; the app is signed but not notarized"
           fi
 
+      # The updater only installs packages signed with the key whose public half is in tauri.conf.json. Releases
+      # must be signed; a manual run without the secret builds the installers without updater signatures.
+      - name: Configure updater signing
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+              echo "::error::the TAURI_SIGNING_PRIVATE_KEY secret is not set; releases must be signed for the updater"
+              exit 1
+            fi
+            echo "::warning::no TAURI_SIGNING_PRIVATE_KEY secret: building without updater artifacts"
+            exit 0
+          fi
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            { echo "$name<<__KAREN_EOF__"; echo "${!name}"; echo "__KAREN_EOF__"; } >> "$GITHUB_ENV"
+          done
+          # merged into tauri.conf.json here only, so local builds need no key
+          echo "UPDATER_ARGS=--config src-tauri/tauri.updater.conf.json" >> "$GITHUB_ENV"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           releaseId: ${{ needs.create-release.outputs.id }}
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ env.UPDATER_ARGS }}
+          # the publish job writes latest.json once every build is in (parallel jobs would race to update it)
+          includeUpdaterJson: false
 
       - name: Upload installers
         uses: actions/upload-artifact@v5
@@ -193,6 +219,46 @@ jobs:
     needs: [create-release, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
+      - name: Upload updater manifest
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { buildManifest, releaseNotes } = require('./scripts/updater-manifest.cjs')
+            const { owner, repo } = context.repo
+            const release_id = ${{ needs.create-release.outputs.id }}
+            const { data: release } = await github.rest.repos.getRelease({ owner, repo, release_id })
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, { owner, repo, release_id, per_page: 100 })
+
+            const signatures = {}
+            for (const asset of assets.filter((a) => a.name.endsWith('.sig'))) {
+              const { data } = await github.rest.repos.getReleaseAsset({
+                owner, repo, asset_id: asset.id, headers: { accept: 'application/octet-stream' },
+              })
+              signatures[asset.name.slice(0, -'.sig'.length)] = Buffer.from(data).toString('utf8')
+            }
+
+            // a draft's asset URLs point at an "untagged" path; these are the ones it gets once published
+            const tag = release.tag_name
+            const manifest = buildManifest({
+              version: tag.replace(/^v/, ''),
+              notes: releaseNotes(release.body),
+              pubDate: new Date().toISOString(),
+              assets: assets.map((a) => a.name),
+              signatures,
+              url: (name) => `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`,
+            })
+            core.info(JSON.stringify(manifest, null, 2))
+
+            const old = assets.find((a) => a.name === 'latest.json')
+            if (old) await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: old.id })
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id, name: 'latest.json',
+              data: JSON.stringify(manifest, null, 2),
+              headers: { 'content-type': 'application/json' },
+            })
+
       - uses: actions/github-script@v8
         with:
           script: |

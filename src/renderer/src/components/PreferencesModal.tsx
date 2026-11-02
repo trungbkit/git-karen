@@ -5,6 +5,7 @@ import { Modal } from '../ui/Modal'
 import { Icon } from '../ui/Icon'
 import { IntegrationsSettings } from './IntegrationsSettings'
 import { CliSettings } from './CliSettings'
+import { UpdateSettings } from './UpdateSettings'
 import { AiQuickSetup } from './AiQuickSetup'
 import { ACCENT_PRESETS, parseHex, THEMES } from '../ui/appearance'
 import { AI_CREDENTIALS, credentialInfo, keyProblem, PROVIDER_LABELS } from '../smart/aiKeys'
@@ -190,7 +191,7 @@ export function PreferencesModal() {
       }}
     />
   )
-  const check = (key: 'rememberTabs' | 'pushAfterCommit' | 'conventionalCommits' | 'showAuthorColumn' | 'showDateColumn' | 'showShaColumn' | 'showChangesColumn' | 'showCommitDescription' | 'showAvatars' | 'showWorktreeWips' | 'syntaxHighlighting' | 'useInAppTerminal', label: string) => (
+  const check = (key: 'autoUpdate' | 'rememberTabs' | 'pushAfterCommit' | 'conventionalCommits' | 'showAuthorColumn' | 'showDateColumn' | 'showShaColumn' | 'showChangesColumn' | 'showCommitDescription' | 'showAvatars' | 'showWorktreeWips' | 'syntaxHighlighting' | 'useInAppTerminal', label: string) => (
     <label className="check">
       <input type="checkbox" checked={draft[key]} onChange={(e) => set(key, e.target.checked)} />
       {label}
@@ -255,6 +256,7 @@ export function PreferencesModal() {
                 />
               </Field>
               <CliSettings />
+              <UpdateSettings autoUpdate={check('autoUpdate', 'Check for updates automatically and download them in the background')} />
             </>
           )}
           {section === 'ui' && (

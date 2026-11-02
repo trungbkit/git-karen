@@ -6,6 +6,7 @@ import { pull, pushCurrent } from '../actions/refActions'
 import { shortcutFor } from '../keybindings'
 import { COMMANDS } from '@shared/commands'
 import { BusyProgress } from '../ui/Progress'
+import { downloadProgress, downloadUpdate, restartToUpdate, useUpdate } from '../state/updates'
 import '../styles/shell.css'
 
 const OP_LABEL: Record<string, string> = {
@@ -23,6 +24,8 @@ export function StatusBar({ repo }: { repo: RepoTab | null }) {
     return (
       <div className="status-bar">
         <span className="muted">Karen</span>
+        <span className="sb-spacer" />
+        <UpdateIndicator />
       </div>
     )
   }
@@ -86,6 +89,7 @@ export function StatusBar({ repo }: { repo: RepoTab | null }) {
         </span>
       )}
       <span className="sb-spacer" />
+      <UpdateIndicator />
       {repo.busy && (
         <span className="sb-item">
           <BusyProgress repo={repo.path} busy={repo.busy} />
@@ -99,4 +103,34 @@ export function StatusBar({ repo }: { repo: RepoTab | null }) {
       </span>
     </div>
   )
+}
+
+/** A downloading or downloaded app update (src/renderer/src/state/updates.ts). */
+function UpdateIndicator() {
+  const s = useUpdate((u) => u.status)
+  if (!s?.canInstall || !s.version) return null
+  switch (s.phase) {
+    case 'downloading':
+      return (
+        <span className="sb-item muted" title={`Downloading Karen ${s.version}`}>
+          <Icon name="fetch" size={12} /> Downloading update {downloadProgress(s)}
+        </span>
+      )
+    case 'ready':
+      return (
+        <button className="sb-item sb-link sb-update" title={`Karen ${s.version} is downloaded. Restart to install it.`} onClick={() => void restartToUpdate()}>
+          <Icon name="refresh" size={12} /> Restart to update
+        </button>
+      )
+    case 'installing':
+      return <span className="sb-item muted">Installing Karen {s.version}…</span>
+    case 'available':
+      return s.error ? (
+        <button className="sb-item sb-link danger" title={s.error} onClick={() => void downloadUpdate()}>
+          <Icon name="warning" size={12} /> Update download failed: retry
+        </button>
+      ) : null
+    default:
+      return null
+  }
 }

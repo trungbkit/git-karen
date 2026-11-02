@@ -142,6 +142,7 @@
 .sb-link:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
 .sb-link:disabled { cursor: default; }
 .sb-spacer { flex: 1; }
+.sb-update { color: var(--accent); font-weight: 600; }
 .sb-path { max-width: 320px; display: block; }
 .sb-op { display: flex; align-items: center; gap: 6px; color: var(--warning); }
 .sb-op .btn.small { padding: 0 8px; font-size: 11px; height: 18px; }

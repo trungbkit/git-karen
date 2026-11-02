@@ -76,6 +76,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for scope and design choices, a
 - Built-in terminal, or your external terminal
 - Dark, light, Nord and Solarized themes, following the system theme, with a custom accent colour and compact density
 - First-run guide on the welcome screen
+- Automatic updates from GitHub releases: downloaded in the background, installed when you restart (Preferences → General turns them off; Check for Updates in the Karen menu, or the Help menu on Windows and Linux, checks now)
 
 ## Requirements
 - Node 22 or later
@@ -100,6 +101,18 @@ git push origin HEAD && git push origin v1.0.1
 ```
 Add `--push` to push the commit and tag right away, or `--no-commit` to only edit the files.
 The [Release workflow](.github/workflows/release.yml) builds macOS (arm64 and x64 `.dmg`), Linux (`.deb`, `.rpm`, `.AppImage`) and Windows (`.exe`, `.msi`) installers and publishes them as a GitHub release. Running the workflow by hand from the Actions tab builds the same installers as workflow artifacts without releasing.
+
+### Updater signing
+The in-app updater installs only packages signed with the key whose public half is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. The Release workflow signs every installer with it and, before publishing, uploads `latest.json` (the version, notes, and each platform's download URL and signature), which the app reads from the latest release.
+
+Add the private key as repository secrets before tagging a release; a tag build fails without them:
+
+| Secret | Value |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | Contents of the private key file (`npx tauri signer generate -w ~/.tauri/karen-updater.key` creates a pair) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Its password; leave the secret out when the key has none |
+
+Keep a backup of the private key: without it, installed copies can no longer be updated, and a new key pair only reaches users who install a release by hand. Local builds (`npm run build`, `npm run package:mac`) do not need the key; they make no updater packages.
 
 ### macOS signing
 Without a paid Apple Developer Program membership the macOS build is ad-hoc signed and not notarized, so Gatekeeper blocks it on first launch ("Karen cannot be opened" or "Karen is damaged"). After moving Karen to Applications, either:

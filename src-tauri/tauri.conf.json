@@ -18,6 +18,12 @@
   "plugins": {
     "deep-link": {
       "desktop": { "schemes": ["karen"] }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZBNkIzRkQ1Q0UwNjNDQ0IKUldUTFBBYk8xVDlyK3JHZS9Ha1Erd0laY01XMjhxajlTV0pZdDhTWlBLcGxCRzRwRi9pUkZCTXQK",
+      "endpoints": ["https://github.com/trungbkit/git-karen/releases/latest/download/latest.json"],
+      "requireSignedVersion": true,
+      "windows": { "installMode": "passive" }
     }
   },
   "bundle": {

@@ -454,6 +454,8 @@ export interface Preferences {
   onboardingDone: boolean
   /** Guide steps already done: 'open', 'palette', 'shortcuts' */
   onboardingSteps: string[]
+  /** Check for new releases at launch and every few hours, and download them in the background */
+  autoUpdate: boolean
 }
 
 export type ThemeName = 'dark' | 'light' | 'nord' | 'solarized'
@@ -521,7 +523,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   commitHistory: {},
   repoScanDirs: ['~/Projects', '~/git', '~/Personal'],
   onboardingDone: false,
-  onboardingSteps: []
+  onboardingSteps: [],
+  autoUpdate: true
 }
 
 export interface AppState {
@@ -767,6 +770,40 @@ export interface GitflowConfig {
   versionTag: string
 }
 
+/** Where releases are published (the updater reads `latest.json` from the latest one) */
+export const RELEASES_URL = 'https://github.com/trungbkit/git-karen/releases'
+
+export type UpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'upToDate'
+  /** Found and not downloaded: not yet, or the download failed (`error`) */
+  | 'available'
+  | 'downloading'
+  /** Downloaded and verified; installed on restart */
+  | 'ready'
+  | 'installing'
+  /** The check failed (`error`) */
+  | 'error'
+
+/** App update state, shared by every window (src-tauri/src/updater.rs). */
+export interface UpdateStatus {
+  phase: UpdatePhase
+  currentVersion: string
+  /** The release the last check found */
+  version: string | null
+  notes: string | null
+  /** RFC 3339 */
+  date: string | null
+  downloaded: number
+  total: number | null
+  error: string | null
+  /** Unix ms of the last check that reached the server */
+  checkedAt: number | null
+  /** False in development builds: they check but never download or install */
+  canInstall: boolean
+}
+
 export interface AppApi {
   getState(): Promise<AppState>
   setOpenTabs(tabs: string[], active: string | null): Promise<void>
@@ -796,6 +833,13 @@ export interface AppApi {
   onProgress(cb: (e: ProgressEvent) => void): () => void
   /** Menu / global commands dispatched from the main process (e.g. "view:toggleFuzzyFinder") */
   onCommand(cb: (command: string) => void): () => void
+  updateStatus(): Promise<UpdateStatus>
+  /** Ask the release server for a newer version; `download` (default true) fetches one in the background */
+  checkForUpdates(download?: boolean): Promise<UpdateStatus>
+  downloadUpdate(): Promise<UpdateStatus>
+  /** Install the downloaded update and restart into it (on Windows the installer quits the app) */
+  installUpdate(): Promise<void>
+  onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   /** Called with the window's native fullscreen state now and whenever it changes. Returns an unsubscribe fn. */
   onFullscreenChange(cb: (fullscreen: boolean) => void): () => void
   platform: string
@@ -862,5 +906,6 @@ export const IPC = {
   repoChanged: 'evt:repoChanged',
   progress: 'evt:progress',
   command: 'evt:command',
-  openRequests: 'evt:openRequests'
+  openRequests: 'evt:openRequests',
+  update: 'evt:update'
 } as const

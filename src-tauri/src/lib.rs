@@ -11,6 +11,7 @@ mod terminal;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
 mod types;
+mod updater;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -91,6 +92,10 @@ async fn app_call(
         }
         "cliStatus" => to_value(launch::cli_status(&app)),
         "installCli" => to_value(launch::install_cli(&app)?),
+        "updateStatus" => to_value(app.state::<updater::Updates>().status()),
+        "checkForUpdates" => to_value(updater::check(&app, a.get::<Option<bool>>(0)?.unwrap_or(true)).await),
+        "downloadUpdate" => to_value(updater::download(&app).await),
+        "installUpdate" => to_value(updater::install(&app).await?),
         "pickDirectory" => {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let mut dialog = app.dialog().file().set_can_create_directories(true).set_parent(&window);
@@ -300,6 +305,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             app.manage(Backend {
@@ -311,6 +317,8 @@ pub fn run() {
                 window_seq: AtomicUsize::new(0),
             });
             app.manage(integrations::Integrations::new(state_file(&handle).with_file_name("integrations.json")));
+            app.manage(updater::Updates::new(app.package_info().version.to_string()));
+            updater::spawn_background_checks(&handle);
             app.set_menu(menu::build(&handle)?)?;
             // paths on the command line (`karen path` with no instance running); the first page takes them
             let cwd = std::env::current_dir().unwrap_or_default();
