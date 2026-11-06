@@ -884,8 +884,8 @@ export interface AiApi {
   status(): Promise<AiStatus>
   /** Merge settings; a credential set to a string is stored, set to null is removed */
   update(settings?: Partial<AiSettings>, secrets?: Partial<Record<AiCredential, string | null>>): Promise<AiStatus>
-  /** Send one prompt to the active provider and return its reply text */
-  complete(prompt: string, maxTokens?: number): Promise<string>
+  /** Send one prompt to the active provider and return its reply text. `model` overrides the configured one. */
+  complete(prompt: string, maxTokens?: number, model?: string): Promise<string>
   /** Test one credential with a tiny request: the typed `secret` (not saved), or else the saved or environment one */
   verify(credential: AiCredential, secret?: string): Promise<AiVerified>
 }

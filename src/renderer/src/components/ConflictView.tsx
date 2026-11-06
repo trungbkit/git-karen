@@ -8,7 +8,9 @@ import { useTokens } from '../highlight/useHighlight'
 import { TokenLine } from '../highlight/Highlighted'
 import { scrollBehavior } from '../ui/appearance'
 import { buildConflictPrompt, conflictMaxTokens, parseConflictResolutions } from '../smart/conflict'
+import { modelLabel, withUserNotes } from '../smart/aiTask'
 import { AiQuickSetup } from './AiQuickSetup'
+import { AiTaskOptions, useAiTaskChoice } from './AiTaskOptions'
 import '../styles/detail.css'
 
 type Side = 'ours' | 'theirs'
@@ -16,10 +18,12 @@ type Side = 'ours' | 'theirs'
 type AiState =
   | { kind: 'idle' }
   | { kind: 'setup' }
-  | { kind: 'running' }
+  /** Picking the model and adding instructions before the AI runs */
+  | { kind: 'compose' }
+  | { kind: 'running'; model: string }
   | { kind: 'error'; message: string }
   /** `resolved`: the conflicts the reply had usable lines for */
-  | { kind: 'done'; notes: (string | null)[]; resolved: boolean[] }
+  | { kind: 'done'; notes: (string | null)[]; resolved: boolean[]; model: string }
 
 function Pane({
   path,
@@ -95,6 +99,10 @@ export function ConflictView({ repo, path }: { repo: RepoTab; path: string }) {
   /** Per conflict, the AI's merged lines (replacing the chosen sides) */
   const [overrides, setOverrides] = useState<(string[] | null)[]>([])
   const [ai, setAi] = useState<AiState>({ kind: 'idle' })
+  const aiChoice = useAiTaskChoice()
+  // instructions are about one file's conflicts
+  const { setNotes } = aiChoice
+  useEffect(() => setNotes(''), [repo.path, path, setNotes])
   const refs = useRef(new Map<string, HTMLDivElement>())
 
   useEffect(() => {
@@ -159,23 +167,30 @@ export function ConflictView({ repo, path }: { repo: RepoTab; path: string }) {
     )
   }
 
+  /** Show the model picker and instructions box, or the provider setup when none is connected. */
+  const openAi = async () => {
+    if (!file || ai.kind === 'running') return
+    if (ai.kind === 'compose') {
+      setAi({ kind: 'idle' })
+      return
+    }
+    const status = await aiChoice.refresh()
+    setAi(status && !status.active ? { kind: 'setup' } : { kind: 'compose' })
+  }
+
   const resolveWithAi = async () => {
     if (!file || ai.kind === 'running') return
-    const prompt = buildConflictPrompt({ path, chunks, operation: repo.status?.operation })
-    if (!prompt) {
+    const built = buildConflictPrompt({ path, chunks, operation: repo.status?.operation })
+    if (!built) {
       setAi({ kind: 'error', message: 'These conflicts are too large for the AI to resolve in one reply. Resolve them by hand.' })
       return
     }
     if (!(await confirmDiscardEdits())) return
-    const status = await window.ai.status().catch(() => null)
-    if (status && !status.active) {
-      setAi({ kind: 'setup' })
-      return
-    }
-    setAi({ kind: 'running' })
+    const model = aiChoice.model
+    setAi({ kind: 'running', model })
     const asked = chunks
     try {
-      const raw = await window.ai.complete(prompt, conflictMaxTokens(chunks))
+      const raw = await window.ai.complete(withUserNotes(built, aiChoice.notes), conflictMaxTokens(chunks), model || undefined)
       if (chunksRef.current !== asked) return
       const { lines, notes } = parseConflictResolutions(raw, conflictCount)
       if (lines.every((l) => l === null)) throw new Error('The AI returned no usable resolution. Try again, or resolve by hand.')
@@ -184,7 +199,7 @@ export function ConflictView({ repo, path }: { repo: RepoTab; path: string }) {
       setOverrides(lines)
       setOutput(render(cleared, lines))
       setEdited(false)
-      setAi({ kind: 'done', notes, resolved: lines.map((l) => l !== null) })
+      setAi({ kind: 'done', notes, resolved: lines.map((l) => l !== null), model })
       const first = lines.findIndex((l) => l === null)
       if (first >= 0) goTo(first)
     } catch (e) {
@@ -247,8 +262,8 @@ export function ConflictView({ repo, path }: { repo: RepoTab; path: string }) {
         <button
           className="btn small"
           disabled={ai.kind === 'running'}
-          title="Let AI merge both sides of every conflict; you review the output before saving"
-          onClick={() => void resolveWithAi()}
+          title="Let AI merge both sides of every conflict; you pick the model, can add instructions, and review the output before saving"
+          onClick={() => void openAi()}
         >
           {ai.kind === 'running' ? <span className="spinner small" /> : <Icon name="sparkle" size={12} />} {ai.kind === 'running' ? 'Resolving…' : 'Resolve with AI'}
         </button>
@@ -317,7 +332,35 @@ export function ConflictView({ repo, path }: { repo: RepoTab; path: string }) {
       {head}
       {ai.kind === 'setup' && (
         <div className="ai-merge">
-          <AiQuickSetup why="to resolve these conflicts" onConnected={(s) => s.active && void resolveWithAi()} onDismiss={() => setAi({ kind: 'idle' })} />
+          <AiQuickSetup
+            why="to resolve these conflicts"
+            onConnected={(s) => s.active && void aiChoice.refresh().then(() => setAi({ kind: 'compose' }))}
+            onDismiss={() => setAi({ kind: 'idle' })}
+          />
+        </div>
+      )}
+      {ai.kind === 'compose' && (
+        <div className="ai-merge">
+          <AiTaskOptions
+            choice={aiChoice}
+            placeholder="Your instructions for the AI (optional), e.g. “keep the new API from B, but the logging from A”. ⌘/Ctrl+Enter to resolve."
+            onSubmit={() => void resolveWithAi()}
+          >
+            <button className="btn small" onClick={() => setAi({ kind: 'idle' })}>
+              Cancel
+            </button>
+            <button className="btn small primary" onClick={() => void resolveWithAi()}>
+              <Icon name="sparkle" size={12} /> Resolve {conflictCount === 1 ? 'conflict' : `${conflictCount} conflicts`}
+            </button>
+          </AiTaskOptions>
+        </div>
+      )}
+      {ai.kind === 'running' && (
+        <div className="ai-merge">
+          <div className="ai-merge-head">
+            <span className="spinner small" />
+            <span className="muted">Resolving with {ai.model ? modelLabel(ai.model) : 'AI'}…</span>
+          </div>
         </div>
       )}
       {ai.kind === 'error' && (
@@ -339,6 +382,7 @@ export function ConflictView({ repo, path }: { repo: RepoTab; path: string }) {
             <b>
               AI resolved {ai.resolved.filter(Boolean).length} of {conflictCount} {conflictCount === 1 ? 'conflict' : 'conflicts'}.
             </b>
+            {ai.model && <span className="muted">({modelLabel(ai.model)})</span>}
             <span className="muted">Review the output before saving; picking a side takes a conflict back.</span>
             <span className="grow" />
             <button className="btn small" onClick={discardAi}>

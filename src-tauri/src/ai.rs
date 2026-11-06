@@ -206,6 +206,16 @@ pub struct Resolved {
     env: Vec<(String, String)>,
 }
 
+impl Resolved {
+    /// The same request settings with another model (one picked for a single task); empty keeps the configured one.
+    pub fn with_model(self, model: Option<String>) -> Self {
+        match model.as_deref().and_then(non_empty) {
+            Some(model) => Resolved { model, ..self },
+            None => self,
+        }
+    }
+}
+
 impl AiStore {
     pub fn new(file: PathBuf) -> Self {
         let data = std::fs::read_to_string(&file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
@@ -761,6 +771,14 @@ mod tests {
             attempts: 3,
             env: vec![("NO_PROXY".into(), "*".into()), ("no_proxy".into(), "*".into())],
         }
+    }
+
+    #[test]
+    fn with_model_overrides_only_when_given() {
+        let r = resolved("u".into());
+        assert_eq!(r.clone().with_model(Some(" claude-opus-5-5 ".into())).model, "claude-opus-5-5");
+        assert_eq!(r.clone().with_model(Some("  ".into())).model, "m");
+        assert_eq!(r.with_model(None).model, "m");
     }
 
     #[tokio::test]

@@ -123,7 +123,7 @@ const aiCall = <T>(method: string, ...args: unknown[]) => call<T>('ai_call', { m
 const ai: AiApi = {
   status: () => aiCall('status'),
   update: (settings, secrets) => aiCall('update', settings ?? null, secrets ?? null),
-  complete: (prompt, maxTokens) => aiCall('complete', prompt, maxTokens ?? null),
+  complete: (prompt, maxTokens, model) => aiCall('complete', prompt, maxTokens ?? null, model ?? null),
   verify: (credential, secret) => aiCall('verify', credential, secret ?? null)
 }
 

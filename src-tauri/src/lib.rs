@@ -153,7 +153,7 @@ async fn ai_call(backend: State<'_, Backend>, method: String, args: Vec<Value>) 
         }
         "verify" => to_value(snapshot().verify(&a.get::<String>(0)?, a.get(1)?).await?),
         "complete" => {
-            let resolved = snapshot().resolve().await?;
+            let resolved = snapshot().resolve().await?.with_model(a.get(2)?);
             to_value(ai::complete(&resolved, &a.get::<String>(0)?, a.get(1)?).await?)
         }
         _ => Err(format!("Unknown method: {method}")),

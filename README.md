@@ -68,6 +68,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for scope and design choices, a
 - Resolve merge conflicts with AI: it merges both sides of every conflict in a file, explains each choice, and fills the output for you to review before saving
 - Summarize selected commits: what they change taken together, grouped by area, with anything worth a closer look (multi-select panel or the commit context menu)
 - Review pull requests with AI from the Pull requests list: the PR is fetched without checking it out, diffed against its base like the provider does, and reviewed with findings by severity and a verdict
+- For conflict resolution and PR review you pick the model (Claude Opus 5.5 by default on Anthropic, the last pick is remembered) and can add your own instructions to the prompt
 - Quick setup right where AI is needed (smart commit, split, Preferences): paste a key, the provider is recognised from it, and it is checked with a tiny request before it is saved
 - Keys stay in the backend; environment variables such as `ANTHROPIC_API_KEY` are picked up as well
 
