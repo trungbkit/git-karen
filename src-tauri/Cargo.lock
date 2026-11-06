@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "karen"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "block2",
  "keyring",
