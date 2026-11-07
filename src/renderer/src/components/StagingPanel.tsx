@@ -23,6 +23,7 @@ import {
   withConventional
 } from '../smart/message'
 import { commitTitle } from '../smart/text'
+import { committedOpenFile } from '../util/committedFile'
 import '../styles/detail.css'
 import '../styles/staging.css'
 
@@ -198,7 +199,7 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
     const stagesAll = nothingStaged && unstaged.length > 0 && !draft.amend
     const center = repo.center
     const open = center.kind === 'diff' && !center.cwd && center.target.kind === 'working' ? center.target : null
-    const openCommitted = open ? (open.staged ? staged : stagesAll ? unstaged : []).find((f) => f.path === open.path) : undefined
+    const openCommitted = committedOpenFile(open, staged, unstaged, stagesAll)
     let amended: string | null = null
     let committedSha: string | null = null
     const ok = await run(
@@ -228,6 +229,7 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
       const now = useStore.getState().repos[repo.path]?.center
       const stillOpen = now?.kind === 'diff' && now.target === open
       if (openCommitted && sha && stillOpen) {
+        useStore.getState().select({ kind: 'commit', shas: [sha] }, repo.path)
         setCenter({ kind: 'diff', target: { kind: 'commit', sha, path: openCommitted.path, oldPath: openCommitted.oldPath } })
       } else if (now?.kind === 'diff' && now.target.kind !== 'working') setCenter({ kind: 'graph' })
     }
