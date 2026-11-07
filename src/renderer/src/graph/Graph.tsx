@@ -16,6 +16,7 @@ import { GraphRowView, type WipSummary } from './rows'
 import { matchesPreset, presetMenuItems } from './presets'
 import { useCommitStats, useStatsScale } from './stats'
 import { useCiPolling } from '../state/hosting'
+import { useAuthorAvatars } from './authorAvatars'
 import { SearchBox, useCommitSearch } from './SearchBox'
 import { BehindBanner } from './BehindBanner'
 import { DelayedGraphSkeleton } from '../ui/Skeleton'
@@ -333,6 +334,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const { stats, version } = useCommitStats(repo.path, visibleShas, prefs.showChangesColumn)
   const statsMax = useStatsScale(stats, version)
   useCiPolling(repo.path, visibleShas)
+  useAuthorAvatars(repo.path, repo.commits, prefs.showAvatars)
 
   const visibleRows: ReactNode[] = []
   for (let i = first; i < last; i++) {

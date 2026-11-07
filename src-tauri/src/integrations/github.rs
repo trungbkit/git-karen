@@ -122,8 +122,31 @@ const CI_FRAGMENT: &str = r#"fragment ci on Commit {
 
 /// One query for many commits: an aliased `object(oid:)` per sha. Shas are validated hex, so inlining them is safe.
 pub fn ci_query(shas: &[String]) -> String {
-    let fields: String = shas.iter().enumerate().map(|(i, sha)| format!("    c{i}: object(oid: \"{sha}\") {{ ...ci }}\n")).collect();
-    format!("query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}\n{CI_FRAGMENT}")
+    format!("{}\n{CI_FRAGMENT}", object_query(shas, "...ci"))
+}
+
+fn object_query(shas: &[String], selection: &str) -> String {
+    let fields: String = shas.iter().enumerate().map(|(i, sha)| format!("    c{i}: object(oid: \"{sha}\") {{ {selection} }}\n")).collect();
+    format!("query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}")
+}
+
+pub fn avatar_query(shas: &[String]) -> String {
+    object_query(shas, "... on Commit { author { user { avatarUrl(size: 64) } } }")
+}
+
+pub fn parse_avatar(commit: &Value) -> Option<String> {
+    commit["author"]["user"]["avatarUrl"].as_str().filter(|u| !u.is_empty()).map(String::from)
+}
+
+pub async fn author_avatars(api: &Api<'_>, r: &RepoRef, shas: &[String]) -> Result<HashMap<String, Option<String>>, String> {
+    let mut out = HashMap::new();
+    for batch in shas.chunks(CI_BATCH) {
+        let data = graphql(api, &avatar_query(batch), json!({ "owner": r.owner, "name": r.name })).await?;
+        for (i, sha) in batch.iter().enumerate() {
+            out.insert(sha.clone(), parse_avatar(&data["repository"][format!("c{i}")]));
+        }
+    }
+    Ok(out)
 }
 
 fn check_state(node: &Value) -> CiState {
@@ -359,5 +382,14 @@ mod tests {
         assert_eq!(res[&sha_b], None);
         assert_eq!(seen.lock().unwrap().len(), 1);
         assert!(seen.lock().unwrap()[0].starts_with("POST /graphql "));
+    }
+
+    #[test]
+    fn parses_author_avatars() {
+        let q = avatar_query(&["a".repeat(40)]);
+        assert!(q.contains("c0: object(oid: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") { ... on Commit { author { user { avatarUrl(size: 64) } } } }"));
+        assert_eq!(parse_avatar(&json!({ "author": { "user": { "avatarUrl": "https://avatars.githubusercontent.com/u/1?s=64" } } })).as_deref(), Some("https://avatars.githubusercontent.com/u/1?s=64"));
+        assert_eq!(parse_avatar(&json!({ "author": { "user": null } })), None);
+        assert_eq!(parse_avatar(&Value::Null), None);
     }
 }

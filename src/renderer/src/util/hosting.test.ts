@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { humanizeBranch, newPullRequestUrl, parseReviewers, prefillPullRequest } from './hosting'
+import { humanizeBranch, noreplyAvatarUrl, newPullRequestUrl, parseReviewers, prefillPullRequest } from './hosting'
 
 describe('hosting helpers', () => {
   it('builds new pull request URLs per provider', () => {
@@ -36,5 +36,11 @@ describe('hosting helpers', () => {
   it('parses reviewer lists', () => {
     expect(parseReviewers(' alice, @bob\nacme/core alice ')).toEqual(['alice', 'bob', 'acme/core'])
     expect(parseReviewers('')).toEqual([])
+  })
+
+  it('maps GitHub noreply emails to avatar URLs', () => {
+    expect(noreplyAvatarUrl('81512528+dophnamm@users.noreply.github.com')).toBe('https://avatars.githubusercontent.com/u/81512528?s=64')
+    expect(noreplyAvatarUrl('Octo@users.noreply.github.com')).toBe('https://github.com/Octo.png?size=64')
+    expect(noreplyAvatarUrl('a@gmail.com')).toBeNull()
   })
 })
