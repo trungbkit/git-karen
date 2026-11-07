@@ -877,6 +877,22 @@ impl Integrations {
         Ok(shas.iter().filter_map(|s| known.get(s).and_then(|e| e.status.clone()).map(|st| (s.clone(), st))).collect())
     }
 
+    pub async fn author_avatars(&self, repo: &str, remote: Option<String>, shas: Vec<String>) -> Result<HashMap<String, Option<String>>, String> {
+        let Ok((_, r)) = self.repo_ref(repo, remote).await else { return Ok(HashMap::new()) };
+        if r.provider.kind != Kind::Github {
+            return Ok(HashMap::new());
+        }
+        let shas: Vec<String> = shas.into_iter().map(|s| s.to_ascii_lowercase()).filter(|s| is_full_sha(s)).take(MAX_CI_SHAS).collect();
+        if shas.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let Ok(api) = self.api(&r.provider).await else { return Ok(HashMap::new()) };
+        if api.blocked_for().is_some() {
+            return Ok(HashMap::new());
+        }
+        Ok(github::author_avatars(&api, &r, &shas).await.unwrap_or_default())
+    }
+
     // ------------------------------------------------------------- dispatch
 
     pub async fn call(&self, method: &str, args: Vec<Value>) -> Result<Value, String> {
@@ -927,6 +943,7 @@ impl Integrations {
                 )
                 .await?),
             "ciStatuses" => v(self.ci_statuses(&a.get::<String>(0)?, a.get(1)?, a.get(2)?, a.get::<Option<u64>>(3)?.unwrap_or(60)).await?),
+            "authorAvatars" => v(self.author_avatars(&a.get::<String>(0)?, a.get(1)?, a.get(2)?).await?),
             _ => Err(format!("Unknown method: {method}")),
         }
     }
@@ -1055,6 +1072,7 @@ mod tests {
         assert!(s.repo_info(repo, Some("--upload-pack=x".into())).await.unwrap().is_none());
         // without a token, CI polling is silently empty and PR listing explains what to do
         assert!(s.ci_statuses(repo, None, vec!["a".repeat(40)], 60).await.unwrap().is_empty());
+        assert!(s.author_avatars(repo, None, vec!["a".repeat(40)]).await.unwrap().is_empty());
         assert!(s.pull_requests(repo, Some("origin".into())).await.unwrap_err().contains("Preferences > Integrations"));
     }
 
