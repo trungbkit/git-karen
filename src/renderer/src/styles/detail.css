@@ -160,7 +160,7 @@
 }
 .dl .sign { flex: none; width: 18px; text-align: center; color: var(--text-disabled); user-select: none; }
 .dl .code { flex: 1; white-space: pre; padding-right: 16px; user-select: text; }
-.diff.wrap .dl .code { white-space: pre-wrap; word-break: break-all; }
+.diff.wrap .dl .code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .dl.add { background: var(--diff-add-bg); }
 .dl.del { background: var(--diff-del-bg); }
 .dl.add .ln { color: color-mix(in srgb, var(--success) 75%, var(--text-disabled)); background: var(--diff-add-bg); }
@@ -179,6 +179,11 @@
 .split { display: grid; grid-template-columns: 1fr 1fr; }
 .split > .side { min-width: 0; overflow: hidden; }
 .split > .side + .side { border-left: 1px solid var(--border); }
+/* wrapped split: both sides share the grid rows, so a wrapped line stays level with its counterpart */
+.diff.wrap .split { grid-auto-flow: dense; }
+.diff.wrap .split > .side { display: contents; }
+.diff.wrap .split > .side:first-child > * { grid-column: 1; }
+.diff.wrap .split > .side + .side > * { grid-column: 2; border-left: 1px solid var(--border); }
 .diff-gap { height: 20px; display: flex; align-items: center; padding-left: 12px; color: var(--text-disabled); font-family: var(--font-ui); font-size: 11px; }
 
 /* diff view header + toolbar */

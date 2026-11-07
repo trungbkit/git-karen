@@ -469,7 +469,7 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
     const v = readLocal('kc:diffMode', readLocal('kc:diffLayout', 'hunk'))
     return v === 'split' || v === 'inline' ? v : 'hunk'
   })
-  const [wrap, setWrap] = useStoredFlag(WRAP_KEY)
+  const [wrap, setWrap] = useStoredFlag(WRAP_KEY, true)
   const [ignoreWs, setIgnoreWs] = useStoredFlag(IGNORE_WHITESPACE_KEY)
   /** SVG files show their text diff instead of the pictures */
   const [svgAsText, setSvgAsText] = useStoredFlag('kc:svgAsText')
