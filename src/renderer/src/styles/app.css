@@ -58,13 +58,14 @@ input[type='checkbox']:focus-visible, input[type='radio']:focus-visible, input[t
 
 /* app shell */
 .app { display: flex; flex-direction: column; height: 100%; }
-.app-body { flex: 1; display: flex; min-height: 0; }
+.app-body { flex: 1; display: flex; min-height: 0; gap: 3px; padding: 6px; }
+.center, .panel-left, .panel-right { border-radius: 10px; overflow: hidden; }
 .center { flex: 1 1 0; min-width: 360px; display: flex; flex-direction: column; background: var(--bg-panel); }
 /* Side panels shrink (down to their min) when the window gets too narrow for their saved widths */
-.panel-left { width: var(--left-w, 260px); min-width: 180px; flex: 0 1 auto; border-right: 1px solid var(--border); background: var(--bg-panel-2); display: flex; flex-direction: column; min-height: 0; }
-.panel-right { width: var(--right-w, 380px); min-width: 280px; flex: 0 1 auto; border-left: 1px solid var(--border); background: var(--bg-panel-2); display: flex; flex-direction: column; min-height: 0; }
+.panel-left { width: var(--left-w, 260px); min-width: 180px; flex: 0 1 auto; background: var(--bg-panel-2); display: flex; flex-direction: column; min-height: 0; }
+.panel-right { width: var(--right-w, 380px); min-width: 280px; flex: 0 1 auto; background: var(--bg-panel-2); display: flex; flex-direction: column; min-height: 0; }
 
-/* column splitters: zero-width in the flow, with a 7px grab area straddling the panel border */
+/* column splitters: zero-width in the flow, with a 7px grab area centred in the gap between cards */
 .splitter { flex: none; width: 0; position: relative; z-index: 5; outline: none; }
 .splitter::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 7px; cursor: col-resize; }
 .splitter::after {
