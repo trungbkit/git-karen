@@ -1,6 +1,6 @@
 // Graph zone geometry: lane positions and the SVG path data for one row's edges.
 // Measurements: 28px rows with a 22px inner band, 22px lanes,
-// 28px gutters, rounded corners where an edge turns between a lane and a node.
+// an 8px left inset and a 28px right gutter, rounded corners where an edge turns between a lane and a node.
 // The row height comes from the density preference (ui/appearance.ts, CSS --row-h).
 
 import type { GraphRow } from './layout'
@@ -20,6 +20,7 @@ export interface GraphMetrics {
   innerTop: number
   compact: boolean
   lineWidth: number
+  inset: number
   gutter: number
   padRight: number
   colWidth: number
@@ -33,20 +34,20 @@ export function metrics(mode: 'rich' | 'compact', rowH = ROW_H): GraphMetrics {
   const innerH = rowH - 2 * BAND_MARGIN
   const rows = { rowH, mid: rowH / 2, innerH, innerTop: BAND_MARGIN }
   if (mode === 'compact') {
-    return { ...rows, compact: true, lineWidth: 1.5, gutter: 10, padRight: 1, colWidth: 12, nodeSize: 10, mergeSize: 8, corner: 6 }
+    return { ...rows, compact: true, lineWidth: 1.5, inset: 10, gutter: 10, padRight: 1, colWidth: 12, nodeSize: 10, mergeSize: 8, corner: 6 }
   }
   // avatar nodes fill the inner band, so shorter rows get smaller nodes
-  return { ...rows, compact: false, lineWidth: 2, gutter: 28, padRight: 3, colWidth: 22, nodeSize: Math.min(22, innerH), mergeSize: 12, corner: 8 }
+  return { ...rows, compact: false, lineWidth: 2, inset: 8, gutter: 28, padRight: 3, colWidth: 22, nodeSize: Math.min(22, innerH), mergeSize: 12, corner: 8 }
 }
 
 /** Centre x of a lane. */
 export function laneX(m: GraphMetrics, col: number): number {
-  return m.gutter + col * m.colWidth + m.colWidth / 2
+  return m.inset + col * m.colWidth + m.colWidth / 2
 }
 
 /** Width needed to show every lane without clipping. */
 export function contentWidth(m: GraphMetrics, columns: number): number {
-  return Math.max(1, columns) * m.colWidth + 2 * m.gutter + 2 * m.padRight
+  return Math.max(1, columns) * m.colWidth + m.inset + m.gutter + 2 * m.padRight
 }
 
 export const laneColor = (col: number) => `var(--lane-${((col % 10) + 10) % 10})`

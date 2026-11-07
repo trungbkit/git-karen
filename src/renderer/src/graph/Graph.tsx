@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type ReactNode } from 'react'
 import type { Preferences, Ref } from '@shared/types'
 import { useStore, type RepoTab } from '../state/store'
 import { dropMenuItems } from '../actions/refActions'
@@ -143,12 +143,14 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const [scrollTop, setScrollTop] = useState(0)
   const [viewH, setViewH] = useState(600)
   const [viewW, setViewW] = useState(1000)
+  const [scrollbarW, setScrollbarW] = useState(0)
   useLayoutEffect(() => {
     const el = scroller.current
     if (!el) return
     const measure = () => {
       setViewH(el.clientHeight)
       setViewW(el.clientWidth)
+      setScrollbarW(el.offsetWidth - el.clientWidth)
     }
     const ro = new ResizeObserver(measure)
     ro.observe(el)
@@ -224,6 +226,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const columns = useMemo(() => visibleColumns(prefs), [prefs])
   const [dragWidths, setDragWidths] = useState<Partial<Record<ColumnId, number>> | null>(null)
   const graphContent = contentWidth(m, layout.maxColumns)
+  const tail = Math.max(0, SETTINGS_W - scrollbarW)
   const widths = useMemo(() => {
     const saved = { ...prefs.graphColumnWidths, ...(dragWidths ?? {}) } as Partial<Record<ColumnId, number>>
     const w = {} as Record<ColumnId, number>
@@ -234,7 +237,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
     // other columns (least important first) down to their minimum widths.
     if (!dragWidths) {
       const fixed = columns.filter((c) => c.id !== 'message')
-      let over = fixed.reduce((sum, c) => sum + w[c.id], 0) + MESSAGE_PREFERRED + SETTINGS_W - viewW
+      let over = fixed.reduce((sum, c) => sum + w[c.id], 0) + MESSAGE_PREFERRED + tail - viewW
       for (const id of SHRINK_ORDER) {
         if (over <= 0) break
         const col = fixed.find((c) => c.id === id)
@@ -246,8 +249,8 @@ export function Graph({ repo }: { repo: RepoTab }) {
       }
     }
     return w
-  }, [prefs.graphColumnWidths, dragWidths, graphContent, m.compact, columns, viewW])
-  const minRowWidth = columns.reduce((sum, c) => sum + (c.id === 'message' ? c.min : widths[c.id]), 0)
+  }, [prefs.graphColumnWidths, dragWidths, graphContent, m.compact, columns, viewW, tail])
+  const minRowWidth = columns.reduce((sum, c) => sum + (c.id === 'message' ? c.min : widths[c.id]), 0) + tail
 
   const startResize = (id: ColumnId) => (e: MouseEvent) => {
     e.preventDefault()
@@ -373,48 +376,61 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const activePreset = (prefs.viewPresets[repo.path] ?? []).find((p) => matchesPreset(p, repo, prefs))
 
   return (
-    <div className="graph">
+    <div className="graph" style={{ '--g-tail': `${tail}px` } as CSSProperties}>
       <BehindBanner repo={repo} />
-      <div
-        className="graph-scroll"
-        ref={scroller}
-        tabIndex={0}
-        role="region"
-        aria-label="Commit graph (arrow keys or J/K move between commits)"
-        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropRow(null)
-        }}
-      >
-        <div className="graph-header" style={{ minWidth: minRowWidth }} onContextMenu={columnMenu}>
-          {columns.map((c) => (
-            <div key={c.id} className={`gh-cell gh-${c.id}`} style={c.id === 'message' ? undefined : { width: widths[c.id] }}>
-              {c.id !== 'message' && c.id !== 'ref' && c.id !== 'graph' && widths[c.id] < HEADER_ICON_W ? (
-                <span className="gh-icon" title={c.label}>
-                  <ColumnIcon id={c.id} />
-                </span>
-              ) : (
-                <span className="gh-label">{c.label}</span>
-              )}
-              {c.id === 'ref' && hiddenCount > 0 && (
-                <button className="gh-reset" title="Show all hidden / soloed refs" onClick={() => updateRepo(repo.path, { hiddenRefs: [], soloRefs: [] })}>
-                  <Icon name="eye-off" size={11} /> {hiddenCount}
-                </button>
-              )}
-              {c.id === 'message' && (
-                <SearchBox
-                  inputRef={filterRef}
-                  query={query}
-                  onChange={setQuery}
-                  onJump={jumpToMatch}
-                  count={matches ? matches.size : null}
-                  pending={searching}
-                  errors={searchErrors}
-                />
-              )}
-              {c.id !== 'message' && <div className="gh-resize" onMouseDown={startResize(c.id)} />}
-            </div>
-          ))}
+      <div className="graph-body">
+        <div
+          className="graph-scroll"
+          ref={scroller}
+          tabIndex={0}
+          role="region"
+          aria-label="Commit graph (arrow keys or J/K move between commits)"
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropRow(null)
+          }}
+        >
+          <div className="graph-header" style={{ minWidth: minRowWidth }} onContextMenu={columnMenu}>
+            {columns.map((c, i) => (
+              <div key={c.id} className={`gh-cell gh-${c.id}`} style={c.id === 'message' ? undefined : { width: widths[c.id] }}>
+                {c.id !== 'message' && c.id !== 'ref' && c.id !== 'graph' && widths[c.id] < HEADER_ICON_W ? (
+                  <span className="gh-icon" title={c.label}>
+                    <ColumnIcon id={c.id} />
+                  </span>
+                ) : (
+                  <span className="gh-label">{c.label}</span>
+                )}
+                {c.id === 'ref' && hiddenCount > 0 && (
+                  <button className="gh-reset" title="Show all hidden / soloed refs" onClick={() => updateRepo(repo.path, { hiddenRefs: [], soloRefs: [] })}>
+                    <Icon name="eye-off" size={11} /> {hiddenCount}
+                  </button>
+                )}
+                {c.id === 'message' && (
+                  <SearchBox
+                    inputRef={filterRef}
+                    query={query}
+                    onChange={setQuery}
+                    onJump={jumpToMatch}
+                    count={matches ? matches.size : null}
+                    pending={searching}
+                    errors={searchErrors}
+                  />
+                )}
+                {c.id !== 'message' && i < columns.length - 1 && <div className="gh-resize" onMouseDown={startResize(c.id)} />}
+              </div>
+            ))}
+          </div>
+
+          <DelayedGraphSkeleton loading={repo.loading && layout.rows.length === 0} />
+          {repo.error && <div className="graph-empty error">{repo.error}</div>}
+          {!repo.loading && !repo.error && layout.rows.length === 0 && (
+            <div className="graph-empty">No commits yet — make your first commit from the panel on the right.</div>
+          )}
+          <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minRowWidth }}>
+            {visibleRows}
+          </div>
+        </div>
+        <div className="gh-actions" onContextMenu={columnMenu}>
           <button
             className={`gh-settings ${activePreset ? 'on' : ''}`}
             title={activePreset ? `View presets (showing “${activePreset.name}”)` : 'View presets'} aria-label={activePreset ? `View presets (showing “${activePreset.name}”)` : 'View presets'}
@@ -425,15 +441,6 @@ export function Graph({ repo }: { repo: RepoTab }) {
           <button className="gh-settings" title="Column settings" aria-label="Column settings" onClick={columnMenu}>
             <Icon name="settings" size={13} />
           </button>
-        </div>
-
-        <DelayedGraphSkeleton loading={repo.loading && layout.rows.length === 0} />
-        {repo.error && <div className="graph-empty error">{repo.error}</div>}
-        {!repo.loading && !repo.error && layout.rows.length === 0 && (
-          <div className="graph-empty">No commits yet — make your first commit from the panel on the right.</div>
-        )}
-        <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minRowWidth }}>
-          {visibleRows}
         </div>
       </div>
     </div>
