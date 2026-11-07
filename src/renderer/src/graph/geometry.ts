@@ -34,7 +34,7 @@ export function metrics(mode: 'rich' | 'compact', rowH = ROW_H): GraphMetrics {
   const innerH = rowH - 2 * BAND_MARGIN
   const rows = { rowH, mid: rowH / 2, innerH, innerTop: BAND_MARGIN }
   if (mode === 'compact') {
-    return { ...rows, compact: true, lineWidth: 1.5, inset: 10, gutter: 10, padRight: 1, colWidth: 12, nodeSize: 10, mergeSize: 8, corner: 6 }
+    return { ...rows, compact: true, lineWidth: 1.5, inset: 8, gutter: 10, padRight: 1, colWidth: 12, nodeSize: 10, mergeSize: 8, corner: 6 }
   }
   // avatar nodes fill the inner band, so shorter rows get smaller nodes
   return { ...rows, compact: false, lineWidth: 2, inset: 8, gutter: 28, padRight: 3, colWidth: 22, nodeSize: Math.min(22, innerH), mergeSize: 12, corner: 8 }

@@ -179,8 +179,6 @@
 .split { display: grid; grid-template-columns: 1fr 1fr; }
 .split > .side { min-width: 0; overflow: hidden; }
 .split > .side + .side { border-left: 1px solid var(--border); }
-/* wrapped split: both sides share the grid rows, so a wrapped line stays level with its counterpart */
-.diff.wrap .split { grid-auto-flow: dense; }
 .diff.wrap .split > .side { display: contents; }
 .diff.wrap .split > .side:first-child > * { grid-column: 1; }
 .diff.wrap .split > .side + .side > * { grid-column: 2; border-left: 1px solid var(--border); }

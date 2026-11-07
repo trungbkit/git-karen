@@ -241,14 +241,14 @@ export function DiffBody({
         <Code nl={nl} tokens={tok} hl={h === null ? undefined : words?.[h]?.[nl.index]} />
       </div>
     )
-  const sideRow = (h: number | null, nl: NumberedLine | undefined, which: 'left' | 'right', key: number, tok: Token[] | null | undefined) =>
+  const sideRow = (h: number | null, nl: NumberedLine | undefined, which: 'left' | 'right', key: number, tok: Token[] | null | undefined, row: number) =>
     !nl ? (
-      <div key={key} className="dl empty">
+      <div key={key} className="dl empty" style={{ gridRow: row + 1 }}>
         <span className="ln" />
         <span className="code"> </span>
       </div>
     ) : (
-      <div key={key} className={lineClass(h ?? -1, nl)} onMouseDown={h === null ? undefined : click(h, nl)} onContextMenu={menu(nl)}>
+      <div key={key} className={lineClass(h ?? -1, nl)} style={{ gridRow: row + 1 }} onMouseDown={h === null ? undefined : click(h, nl)} onContextMenu={menu(nl)}>
         {lineNo(nl, which === 'left' ? nl.oldNo : nl.newNo)}
         {sign(nl)}
         <Code nl={nl} tokens={tok} hl={h === null ? undefined : words?.[h]?.[nl.index]} />
@@ -263,8 +263,8 @@ export function DiffBody({
     if (layout === 'unified') return rows.map((nl) => unifiedRow(null, nl, tok(nl)))
     return (
       <div key={`lines-${first}`} className="split">
-        <div className="side">{rows.map((nl) => sideRow(null, nl, 'left', nl.index, tok(nl)))}</div>
-        <div className="side">{rows.map((nl) => sideRow(null, nl, 'right', nl.index, tok(nl)))}</div>
+        <div className="side">{rows.map((nl, i) => sideRow(null, nl, 'left', nl.index, tok(nl), i))}</div>
+        <div className="side">{rows.map((nl, i) => sideRow(null, nl, 'right', nl.index, tok(nl), i))}</div>
       </div>
     )
   }
@@ -320,7 +320,7 @@ export function DiffBody({
               ? lines.map((nl) => unifiedRow(h, nl, tokens?.[h]?.[nl.index]))
               : (() => {
                   const rows = splitRows(lines)
-                  const side = (which: 'left' | 'right') => rows.map((r, i) => sideRow(h, r[which], which, i, r[which] && tokens?.[h]?.[r[which]!.index]))
+                  const side = (which: 'left' | 'right') => rows.map((r, i) => sideRow(h, r[which], which, i, r[which] && tokens?.[h]?.[r[which]!.index], i))
                   return (
                     <div className="split">
                       <div className="side">{side('left')}</div>
@@ -481,7 +481,6 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
   /** Hunk being edited before staging; `diff` is the diff it was opened from */
   const [editing, setEditing] = useState<{ diff: FileDiff; hunk: number; text: string; error: string | null } | null>(null)
   const lastSignature = useRef<string | null>(null)
-  const openedHead = useRef<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
 
   const repoPath = cwd ?? repo.path
@@ -508,7 +507,6 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
         const signature = JSON.stringify(d)
         if (signature === lastSignature.current) return
         lastSignature.current = signature
-        if (d) openedHead.current = repo.status?.headSha ?? null
         setDiff(d)
         setSelected(new Set())
         setAnchor(null)
@@ -550,11 +548,6 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
     if (diff === undefined) return
     if (diff !== null) {
       if (focusHunk >= diff.hunks.length) setFocusHunk(Math.max(0, diff.hunks.length - 1))
-      return
-    }
-    const head = repo.status?.headSha
-    if (isWorking && !cwd && head && openedHead.current && head !== openedHead.current) {
-      setCenter({ kind: 'diff', target: { kind: 'commit', sha: head, path } })
       return
     }
     if (!advanceOnEmpty.current || fileIndex >= 0 || siblings.length === 0) return

@@ -21,7 +21,6 @@ import { BehindBanner } from './BehindBanner'
 import { DelayedGraphSkeleton } from '../ui/Skeleton'
 import './graph.css'
 
-const HEADER_H = 26
 const OVERSCAN = 12
 /** View presets and column settings buttons at the end of the header */
 const SETTINGS_W = 56
@@ -140,6 +139,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
 
   // ---- virtualisation --------------------------------------------------------------------
   const scroller = useRef<HTMLDivElement>(null)
+  const headCols = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewH, setViewH] = useState(600)
   const [viewW, setViewW] = useState(1000)
@@ -161,10 +161,9 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const scrollToRow = useCallback((i: number) => {
     const el = scroller.current
     if (!el) return
-    // Rows start below the sticky header.
     const top = i * ROW_H
     if (top < el.scrollTop) el.scrollTop = top
-    else if (HEADER_H + top + ROW_H > el.scrollTop + el.clientHeight) el.scrollTop = HEADER_H + top + ROW_H - el.clientHeight
+    else if (top + ROW_H > el.scrollTop + el.clientHeight) el.scrollTop = top + ROW_H - el.clientHeight
   }, [ROW_H])
 
   const lastSelectedIndex = useMemo(() => {
@@ -206,7 +205,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
           const i = navState.current.index.get(sha)
           const el = scroller.current
           if (i === undefined || !el) return false
-          el.scrollTop = revealScrollTop(i, { scrollTop: el.scrollTop, height: el.clientHeight, headerHeight: HEADER_H, rowHeight: navState.current.rowH })
+          el.scrollTop = revealScrollTop(i, { scrollTop: el.scrollTop, height: el.clientHeight, headerHeight: 0, rowHeight: navState.current.rowH })
           setFlash({ sha, id: ++flashSeq })
           return true
         }
@@ -250,7 +249,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
     }
     return w
   }, [prefs.graphColumnWidths, dragWidths, graphContent, m.compact, columns, viewW, tail])
-  const minRowWidth = columns.reduce((sum, c) => sum + (c.id === 'message' ? c.min : widths[c.id]), 0) + tail
+  const minColsWidth = columns.reduce((sum, c) => sum + (c.id === 'message' ? c.min : widths[c.id]), 0)
 
   const startResize = (id: ColumnId) => (e: MouseEvent) => {
     e.preventDefault()
@@ -378,19 +377,9 @@ export function Graph({ repo }: { repo: RepoTab }) {
   return (
     <div className="graph" style={{ '--g-tail': `${tail}px` } as CSSProperties}>
       <BehindBanner repo={repo} />
-      <div className="graph-body">
-        <div
-          className="graph-scroll"
-          ref={scroller}
-          tabIndex={0}
-          role="region"
-          aria-label="Commit graph (arrow keys or J/K move between commits)"
-          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-          onDragLeave={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropRow(null)
-          }}
-        >
-          <div className="graph-header" style={{ minWidth: minRowWidth }} onContextMenu={columnMenu}>
+      <div className="graph-head" onWheel={(e) => scroller.current?.scrollBy(e.deltaX, e.deltaY)}>
+        <div className="graph-head-cols" ref={headCols}>
+          <div className="graph-header" style={{ minWidth: minColsWidth }} onContextMenu={columnMenu}>
             {columns.map((c, i) => (
               <div key={c.id} className={`gh-cell gh-${c.id}`} style={c.id === 'message' ? undefined : { width: widths[c.id] }}>
                 {c.id !== 'message' && c.id !== 'ref' && c.id !== 'graph' && widths[c.id] < HEADER_ICON_W ? (
@@ -420,15 +409,6 @@ export function Graph({ repo }: { repo: RepoTab }) {
               </div>
             ))}
           </div>
-
-          <DelayedGraphSkeleton loading={repo.loading && layout.rows.length === 0} />
-          {repo.error && <div className="graph-empty error">{repo.error}</div>}
-          {!repo.loading && !repo.error && layout.rows.length === 0 && (
-            <div className="graph-empty">No commits yet — make your first commit from the panel on the right.</div>
-          )}
-          <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minRowWidth }}>
-            {visibleRows}
-          </div>
         </div>
         <div className="gh-actions" onContextMenu={columnMenu}>
           <button
@@ -441,6 +421,29 @@ export function Graph({ repo }: { repo: RepoTab }) {
           <button className="gh-settings" title="Column settings" aria-label="Column settings" onClick={columnMenu}>
             <Icon name="settings" size={13} />
           </button>
+        </div>
+      </div>
+      <div
+        className="graph-scroll"
+        ref={scroller}
+        tabIndex={0}
+        role="region"
+        aria-label="Commit graph (arrow keys or J/K move between commits)"
+        onScroll={(e) => {
+          setScrollTop(e.currentTarget.scrollTop)
+          if (headCols.current) headCols.current.scrollLeft = e.currentTarget.scrollLeft
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropRow(null)
+        }}
+      >
+        <DelayedGraphSkeleton loading={repo.loading && layout.rows.length === 0} />
+        {repo.error && <div className="graph-empty error">{repo.error}</div>}
+        {!repo.loading && !repo.error && layout.rows.length === 0 && (
+          <div className="graph-empty">No commits yet — make your first commit from the panel on the right.</div>
+        )}
+        <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minColsWidth + tail }}>
+          {visibleRows}
         </div>
       </div>
     </div>
