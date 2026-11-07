@@ -160,7 +160,7 @@
 }
 .dl .sign { flex: none; width: 18px; text-align: center; color: var(--text-disabled); user-select: none; }
 .dl .code { flex: 1; white-space: pre; padding-right: 16px; user-select: text; }
-.diff.wrap .dl .code { white-space: pre-wrap; word-break: break-all; }
+.diff.wrap .dl .code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .dl.add { background: var(--diff-add-bg); }
 .dl.del { background: var(--diff-del-bg); }
 .dl.add .ln { color: color-mix(in srgb, var(--success) 75%, var(--text-disabled)); background: var(--diff-add-bg); }
@@ -179,6 +179,9 @@
 .split { display: grid; grid-template-columns: 1fr 1fr; }
 .split > .side { min-width: 0; overflow: hidden; }
 .split > .side + .side { border-left: 1px solid var(--border); }
+.diff.wrap .split > .side { display: contents; }
+.diff.wrap .split > .side:first-child > * { grid-column: 1; }
+.diff.wrap .split > .side + .side > * { grid-column: 2; border-left: 1px solid var(--border); }
 .diff-gap { height: 20px; display: flex; align-items: center; padding-left: 12px; color: var(--text-disabled); font-family: var(--font-ui); font-size: 11px; }
 
 /* diff view header + toolbar */
@@ -341,8 +344,8 @@
 
 /* composer AI actions */
 .composer-ai { display: flex; gap: 6px; }
-.composer-ai .btn { display: inline-flex; align-items: center; gap: 5px; }
-.composer-ai .btn.grow { flex: 1; justify-content: center; }
+.composer-ai .btn { display: inline-flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; overflow: hidden; justify-content: center; }
+.composer-ai .btn-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* recovery (reflog) view */
 .reflog-filter { width: 260px; }

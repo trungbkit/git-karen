@@ -24,7 +24,7 @@ describe('graph metrics by density', () => {
 
   it('draws edges over the whole row height', () => {
     const m = metrics('rich', 24)
-    const paths = rowEdgePaths(m, row, 39).map((p) => p.d)
-    expect(paths).toEqual(['M39 0V12', 'M39 12V24', 'M61 0V24'])
+    const paths = rowEdgePaths(m, row, 19).map((p) => p.d)
+    expect(paths).toEqual(['M19 0V12', 'M19 12V24', 'M41 0V24'])
   })
 })

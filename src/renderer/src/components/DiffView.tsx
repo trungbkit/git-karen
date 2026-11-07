@@ -241,14 +241,14 @@ export function DiffBody({
         <Code nl={nl} tokens={tok} hl={h === null ? undefined : words?.[h]?.[nl.index]} />
       </div>
     )
-  const sideRow = (h: number | null, nl: NumberedLine | undefined, which: 'left' | 'right', key: number, tok: Token[] | null | undefined) =>
+  const sideRow = (h: number | null, nl: NumberedLine | undefined, which: 'left' | 'right', key: number, tok: Token[] | null | undefined, row: number) =>
     !nl ? (
-      <div key={key} className="dl empty">
+      <div key={key} className="dl empty" style={{ gridRow: row + 1 }}>
         <span className="ln" />
         <span className="code"> </span>
       </div>
     ) : (
-      <div key={key} className={lineClass(h ?? -1, nl)} onMouseDown={h === null ? undefined : click(h, nl)} onContextMenu={menu(nl)}>
+      <div key={key} className={lineClass(h ?? -1, nl)} style={{ gridRow: row + 1 }} onMouseDown={h === null ? undefined : click(h, nl)} onContextMenu={menu(nl)}>
         {lineNo(nl, which === 'left' ? nl.oldNo : nl.newNo)}
         {sign(nl)}
         <Code nl={nl} tokens={tok} hl={h === null ? undefined : words?.[h]?.[nl.index]} />
@@ -263,8 +263,8 @@ export function DiffBody({
     if (layout === 'unified') return rows.map((nl) => unifiedRow(null, nl, tok(nl)))
     return (
       <div key={`lines-${first}`} className="split">
-        <div className="side">{rows.map((nl) => sideRow(null, nl, 'left', nl.index, tok(nl)))}</div>
-        <div className="side">{rows.map((nl) => sideRow(null, nl, 'right', nl.index, tok(nl)))}</div>
+        <div className="side">{rows.map((nl, i) => sideRow(null, nl, 'left', nl.index, tok(nl), i))}</div>
+        <div className="side">{rows.map((nl, i) => sideRow(null, nl, 'right', nl.index, tok(nl), i))}</div>
       </div>
     )
   }
@@ -320,7 +320,7 @@ export function DiffBody({
               ? lines.map((nl) => unifiedRow(h, nl, tokens?.[h]?.[nl.index]))
               : (() => {
                   const rows = splitRows(lines)
-                  const side = (which: 'left' | 'right') => rows.map((r, i) => sideRow(h, r[which], which, i, r[which] && tokens?.[h]?.[r[which]!.index]))
+                  const side = (which: 'left' | 'right') => rows.map((r, i) => sideRow(h, r[which], which, i, r[which] && tokens?.[h]?.[r[which]!.index], i))
                   return (
                     <div className="split">
                       <div className="side">{side('left')}</div>
@@ -469,7 +469,7 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
     const v = readLocal('kc:diffMode', readLocal('kc:diffLayout', 'hunk'))
     return v === 'split' || v === 'inline' ? v : 'hunk'
   })
-  const [wrap, setWrap] = useStoredFlag(WRAP_KEY)
+  const [wrap, setWrap] = useStoredFlag(WRAP_KEY, true)
   const [ignoreWs, setIgnoreWs] = useStoredFlag(IGNORE_WHITESPACE_KEY)
   /** SVG files show their text diff instead of the pictures */
   const [svgAsText, setSvgAsText] = useStoredFlag('kc:svgAsText')

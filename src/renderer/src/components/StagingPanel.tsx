@@ -195,13 +195,19 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
   const commit = async () => {
     if (!canCommit) return
     const message = draft.description.trim() ? `${draft.summary.trim()}\n\n${draft.description.trim()}` : draft.summary.trim()
+    const stagesAll = nothingStaged && unstaged.length > 0 && !draft.amend
+    const center = repo.center
+    const open = center.kind === 'diff' && !center.cwd && center.target.kind === 'working' ? center.target : null
+    const openCommitted = open ? (open.staged ? staged : stagesAll ? unstaged : []).find((f) => f.path === open.path) : undefined
     let amended: string | null = null
+    let committedSha: string | null = null
     const ok = await run(
       draft.amend ? 'Amending commit' : 'Committing',
       async (r) => {
         if (draft.amend) amended = await window.git.resolveRef(r, 'HEAD')
-        if (nothingStaged && unstaged.length > 0 && !draft.amend) await window.git.stageAll(r)
+        if (stagesAll) await window.git.stageAll(r)
         await window.git.commit(r, message, { amend: draft.amend, noVerify, signoff: signChoice.signoff, sign: signChoice.sign ?? undefined })
+        if (openCommitted) committedSha = await window.git.resolveRef(r, 'HEAD')
         if (pushAfterCommit) await window.git.push(r)
       },
       { success: draft.amend ? undefined : 'Committed' }
@@ -218,7 +224,12 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
       drafts.set(repo.path, fresh)
       setDraftState(fresh)
       historyNav.current = null
-      if (repo.center.kind === 'diff') setCenter({ kind: 'graph' })
+      const sha = committedSha as string | null
+      const now = useStore.getState().repos[repo.path]?.center
+      const stillOpen = now?.kind === 'diff' && now.target === open
+      if (openCommitted && sha && stillOpen) {
+        setCenter({ kind: 'diff', target: { kind: 'commit', sha, path: openCommitted.path, oldPath: openCommitted.oldPath } })
+      } else if (now?.kind === 'diff' && now.target.kind !== 'working') setCenter({ kind: 'graph' })
     }
   }
 
@@ -694,12 +705,13 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
         </div>
         <div className="composer-ai">
           <button
-            className="btn small grow"
+            className="btn small"
             disabled={generating || draft.amend || (staged.length === 0 && unstaged.length === 0)}
             onClick={() => void writeWithAi()}
             title={nothingStaged ? 'Write a commit message for all changes with AI' : 'Write a commit message for the staged changes with AI'}
           >
-            {generating ? <span className="spinner small" /> : <Icon name="sparkle" size={12} />} {generating ? 'Writing…' : 'Write message with AI'}
+            {generating ? <span className="spinner small" /> : <Icon name="sparkle" size={12} />}
+            <span className="btn-label">{generating ? 'Writing…' : 'Write message with AI'}</span>
           </button>
           <button
             className="btn small"
@@ -707,10 +719,10 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
             onClick={() => useStore.getState().setModal({ kind: 'splitCommit' })}
             title="Let AI group all changes into several commits"
           >
-            <Icon name="scissors" size={12} /> Split…
+            <Icon name="scissors" size={12} /> <span className="btn-label">Split…</span>
           </button>
           <button className="btn small" disabled={!!repo.busy || conflicted.length > 0} onClick={() => useStore.getState().setModal({ kind: 'smartCommit' })} title="Stage, commit, push and open pull requests in one go">
-            <Icon name="pull-request" size={12} /> Smart commit &amp; PR…
+            <Icon name="pull-request" size={12} /> <span className="btn-label">Smart commit &amp; PR…</span>
           </button>
         </div>
         <button className="btn primary" disabled={!canCommit || !!repo.busy} onClick={() => void commit()} title="⌘/Ctrl + Enter">

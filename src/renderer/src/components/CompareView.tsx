@@ -179,7 +179,7 @@ export function CompareView({ repo, from, to }: { repo: RepoTab; from: string; t
 
 function CompareDiff({ repo, from, to, file }: { repo: RepoTab; from: string; to: string; file?: FileChange }) {
   const [split, setSplit] = useState(() => readLocal('kc:compareLayout', 'unified') === 'split')
-  const [wrap, setWrap] = useStoredFlag(WRAP_KEY)
+  const [wrap, setWrap] = useStoredFlag(WRAP_KEY, true)
   const [ignoreWs, setIgnoreWs] = useStoredFlag(IGNORE_WHITESPACE_KEY)
   const [svgAsText, setSvgAsText] = useStoredFlag('kc:svgAsText')
   const [showLarge, setShowLarge] = useState(false)

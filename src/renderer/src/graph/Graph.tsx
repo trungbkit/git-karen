@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type ReactNode } from 'react'
 import type { Preferences, Ref } from '@shared/types'
 import { useStore, type RepoTab } from '../state/store'
 import { dropMenuItems } from '../actions/refActions'
@@ -21,7 +21,6 @@ import { BehindBanner } from './BehindBanner'
 import { DelayedGraphSkeleton } from '../ui/Skeleton'
 import './graph.css'
 
-const HEADER_H = 26
 const OVERSCAN = 12
 /** View presets and column settings buttons at the end of the header */
 const SETTINGS_W = 56
@@ -140,15 +139,18 @@ export function Graph({ repo }: { repo: RepoTab }) {
 
   // ---- virtualisation --------------------------------------------------------------------
   const scroller = useRef<HTMLDivElement>(null)
+  const headCols = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewH, setViewH] = useState(600)
   const [viewW, setViewW] = useState(1000)
+  const [scrollbarW, setScrollbarW] = useState(0)
   useLayoutEffect(() => {
     const el = scroller.current
     if (!el) return
     const measure = () => {
       setViewH(el.clientHeight)
       setViewW(el.clientWidth)
+      setScrollbarW(el.offsetWidth - el.clientWidth)
     }
     const ro = new ResizeObserver(measure)
     ro.observe(el)
@@ -159,10 +161,9 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const scrollToRow = useCallback((i: number) => {
     const el = scroller.current
     if (!el) return
-    // Rows start below the sticky header.
     const top = i * ROW_H
     if (top < el.scrollTop) el.scrollTop = top
-    else if (HEADER_H + top + ROW_H > el.scrollTop + el.clientHeight) el.scrollTop = HEADER_H + top + ROW_H - el.clientHeight
+    else if (top + ROW_H > el.scrollTop + el.clientHeight) el.scrollTop = top + ROW_H - el.clientHeight
   }, [ROW_H])
 
   const lastSelectedIndex = useMemo(() => {
@@ -204,7 +205,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
           const i = navState.current.index.get(sha)
           const el = scroller.current
           if (i === undefined || !el) return false
-          el.scrollTop = revealScrollTop(i, { scrollTop: el.scrollTop, height: el.clientHeight, headerHeight: HEADER_H, rowHeight: navState.current.rowH })
+          el.scrollTop = revealScrollTop(i, { scrollTop: el.scrollTop, height: el.clientHeight, headerHeight: 0, rowHeight: navState.current.rowH })
           setFlash({ sha, id: ++flashSeq })
           return true
         }
@@ -224,6 +225,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const columns = useMemo(() => visibleColumns(prefs), [prefs])
   const [dragWidths, setDragWidths] = useState<Partial<Record<ColumnId, number>> | null>(null)
   const graphContent = contentWidth(m, layout.maxColumns)
+  const tail = Math.max(0, SETTINGS_W - scrollbarW)
   const widths = useMemo(() => {
     const saved = { ...prefs.graphColumnWidths, ...(dragWidths ?? {}) } as Partial<Record<ColumnId, number>>
     const w = {} as Record<ColumnId, number>
@@ -234,7 +236,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
     // other columns (least important first) down to their minimum widths.
     if (!dragWidths) {
       const fixed = columns.filter((c) => c.id !== 'message')
-      let over = fixed.reduce((sum, c) => sum + w[c.id], 0) + MESSAGE_PREFERRED + SETTINGS_W - viewW
+      let over = fixed.reduce((sum, c) => sum + w[c.id], 0) + MESSAGE_PREFERRED + tail - viewW
       for (const id of SHRINK_ORDER) {
         if (over <= 0) break
         const col = fixed.find((c) => c.id === id)
@@ -246,8 +248,8 @@ export function Graph({ repo }: { repo: RepoTab }) {
       }
     }
     return w
-  }, [prefs.graphColumnWidths, dragWidths, graphContent, m.compact, columns, viewW])
-  const minRowWidth = columns.reduce((sum, c) => sum + (c.id === 'message' ? c.min : widths[c.id]), 0)
+  }, [prefs.graphColumnWidths, dragWidths, graphContent, m.compact, columns, viewW, tail])
+  const minColsWidth = columns.reduce((sum, c) => sum + (c.id === 'message' ? c.min : widths[c.id]), 0)
 
   const startResize = (id: ColumnId) => (e: MouseEvent) => {
     e.preventDefault()
@@ -373,48 +375,42 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const activePreset = (prefs.viewPresets[repo.path] ?? []).find((p) => matchesPreset(p, repo, prefs))
 
   return (
-    <div className="graph">
+    <div className="graph" style={{ '--g-tail': `${tail}px` } as CSSProperties}>
       <BehindBanner repo={repo} />
-      <div
-        className="graph-scroll"
-        ref={scroller}
-        tabIndex={0}
-        role="region"
-        aria-label="Commit graph (arrow keys or J/K move between commits)"
-        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropRow(null)
-        }}
-      >
-        <div className="graph-header" style={{ minWidth: minRowWidth }} onContextMenu={columnMenu}>
-          {columns.map((c) => (
-            <div key={c.id} className={`gh-cell gh-${c.id}`} style={c.id === 'message' ? undefined : { width: widths[c.id] }}>
-              {c.id !== 'message' && c.id !== 'ref' && c.id !== 'graph' && widths[c.id] < HEADER_ICON_W ? (
-                <span className="gh-icon" title={c.label}>
-                  <ColumnIcon id={c.id} />
-                </span>
-              ) : (
-                <span className="gh-label">{c.label}</span>
-              )}
-              {c.id === 'ref' && hiddenCount > 0 && (
-                <button className="gh-reset" title="Show all hidden / soloed refs" onClick={() => updateRepo(repo.path, { hiddenRefs: [], soloRefs: [] })}>
-                  <Icon name="eye-off" size={11} /> {hiddenCount}
-                </button>
-              )}
-              {c.id === 'message' && (
-                <SearchBox
-                  inputRef={filterRef}
-                  query={query}
-                  onChange={setQuery}
-                  onJump={jumpToMatch}
-                  count={matches ? matches.size : null}
-                  pending={searching}
-                  errors={searchErrors}
-                />
-              )}
-              {c.id !== 'message' && <div className="gh-resize" onMouseDown={startResize(c.id)} />}
-            </div>
-          ))}
+      <div className="graph-head" onWheel={(e) => scroller.current?.scrollBy(e.deltaX, e.deltaY)}>
+        <div className="graph-head-cols" ref={headCols}>
+          <div className="graph-header" style={{ minWidth: minColsWidth }} onContextMenu={columnMenu}>
+            {columns.map((c, i) => (
+              <div key={c.id} className={`gh-cell gh-${c.id}`} style={c.id === 'message' ? undefined : { width: widths[c.id] }}>
+                {c.id !== 'message' && c.id !== 'ref' && c.id !== 'graph' && widths[c.id] < HEADER_ICON_W ? (
+                  <span className="gh-icon" title={c.label}>
+                    <ColumnIcon id={c.id} />
+                  </span>
+                ) : (
+                  <span className="gh-label">{c.label}</span>
+                )}
+                {c.id === 'ref' && hiddenCount > 0 && (
+                  <button className="gh-reset" title="Show all hidden / soloed refs" onClick={() => updateRepo(repo.path, { hiddenRefs: [], soloRefs: [] })}>
+                    <Icon name="eye-off" size={11} /> {hiddenCount}
+                  </button>
+                )}
+                {c.id === 'message' && (
+                  <SearchBox
+                    inputRef={filterRef}
+                    query={query}
+                    onChange={setQuery}
+                    onJump={jumpToMatch}
+                    count={matches ? matches.size : null}
+                    pending={searching}
+                    errors={searchErrors}
+                  />
+                )}
+                {c.id !== 'message' && i < columns.length - 1 && <div className="gh-resize" onMouseDown={startResize(c.id)} />}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="gh-actions" onContextMenu={columnMenu}>
           <button
             className={`gh-settings ${activePreset ? 'on' : ''}`}
             title={activePreset ? `View presets (showing “${activePreset.name}”)` : 'View presets'} aria-label={activePreset ? `View presets (showing “${activePreset.name}”)` : 'View presets'}
@@ -426,13 +422,27 @@ export function Graph({ repo }: { repo: RepoTab }) {
             <Icon name="settings" size={13} />
           </button>
         </div>
-
+      </div>
+      <div
+        className="graph-scroll"
+        ref={scroller}
+        tabIndex={0}
+        role="region"
+        aria-label="Commit graph (arrow keys or J/K move between commits)"
+        onScroll={(e) => {
+          setScrollTop(e.currentTarget.scrollTop)
+          if (headCols.current) headCols.current.scrollLeft = e.currentTarget.scrollLeft
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropRow(null)
+        }}
+      >
         <DelayedGraphSkeleton loading={repo.loading && layout.rows.length === 0} />
         {repo.error && <div className="graph-empty error">{repo.error}</div>}
         {!repo.loading && !repo.error && layout.rows.length === 0 && (
           <div className="graph-empty">No commits yet — make your first commit from the panel on the right.</div>
         )}
-        <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minRowWidth }}>
+        <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minColsWidth + tail }}>
           {visibleRows}
         </div>
       </div>
