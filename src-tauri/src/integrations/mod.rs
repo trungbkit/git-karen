@@ -343,7 +343,6 @@ pub struct Integrations {
     tokens: Mutex<HashMap<String, Option<String>>>,
     viewers: Mutex<HashMap<String, String>>,
     ci: Mutex<HashMap<String, HashMap<String, CiEntry>>>,
-    avatars: Mutex<HashMap<String, HashMap<String, Option<String>>>>,
     limits: Mutex<HashMap<String, u64>>,
     env: OnceCell<Vec<(String, String)>>,
     /// The gh executable
@@ -448,7 +447,6 @@ impl Integrations {
             tokens: Mutex::default(),
             viewers: Mutex::default(),
             ci: Mutex::default(),
-            avatars: Mutex::default(),
             limits: Mutex::default(),
             env: OnceCell::new(),
             gh_program: gh::program(),
@@ -884,25 +882,15 @@ impl Integrations {
         if r.provider.kind != Kind::Github {
             return Ok(HashMap::new());
         }
-        let key = format!("{}|{}", r.provider.api_url, r.path);
         let shas: Vec<String> = shas.into_iter().map(|s| s.to_ascii_lowercase()).filter(|s| is_full_sha(s)).take(MAX_CI_SHAS).collect();
-        let missing: Vec<String> = {
-            let cache = self.avatars.lock().unwrap();
-            let known = cache.get(&key);
-            shas.iter().filter(|s| !known.is_some_and(|k| k.contains_key(*s))).cloned().collect()
-        };
-        if !missing.is_empty() {
-            if let Ok(api) = self.api(&r.provider).await {
-                if api.blocked_for().is_none() {
-                    if let Ok(fetched) = github::author_avatars(&api, &r, &missing).await {
-                        self.avatars.lock().unwrap().entry(key.clone()).or_default().extend(fetched);
-                    }
-                }
-            }
+        if shas.is_empty() {
+            return Ok(HashMap::new());
         }
-        let cache = self.avatars.lock().unwrap();
-        let Some(known) = cache.get(&key) else { return Ok(HashMap::new()) };
-        Ok(shas.iter().filter_map(|s| known.get(s).map(|u| (s.clone(), u.clone()))).collect())
+        let Ok(api) = self.api(&r.provider).await else { return Ok(HashMap::new()) };
+        if api.blocked_for().is_some() {
+            return Ok(HashMap::new());
+        }
+        Ok(github::author_avatars(&api, &r, &shas).await.unwrap_or_default())
     }
 
     // ------------------------------------------------------------- dispatch

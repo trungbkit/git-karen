@@ -141,9 +141,12 @@ pub fn parse_avatar(commit: &Value) -> Option<String> {
 pub async fn author_avatars(api: &Api<'_>, r: &RepoRef, shas: &[String]) -> Result<HashMap<String, Option<String>>, String> {
     let mut out = HashMap::new();
     for batch in shas.chunks(CI_BATCH) {
-        let data = graphql(api, &avatar_query(batch), json!({ "owner": r.owner, "name": r.name })).await?;
+        let Ok(data) = graphql(api, &avatar_query(batch), json!({ "owner": r.owner, "name": r.name })).await else { break };
         for (i, sha) in batch.iter().enumerate() {
-            out.insert(sha.clone(), parse_avatar(&data["repository"][format!("c{i}")]));
+            let commit = &data["repository"][format!("c{i}")];
+            if !commit.is_null() {
+                out.insert(sha.clone(), parse_avatar(commit));
+            }
         }
     }
     Ok(out)
@@ -382,6 +385,25 @@ mod tests {
         assert_eq!(res[&sha_b], None);
         assert_eq!(seen.lock().unwrap().len(), 1);
         assert!(seen.lock().unwrap()[0].starts_with("POST /graphql "));
+    }
+
+    #[tokio::test]
+    async fn leaves_unknown_commits_out_of_the_avatars() {
+        let (sha_a, sha_b) = ("a".repeat(40), "b".repeat(40));
+        let body = json!({ "data": { "repository": {
+            "c0": { "author": { "user": { "avatarUrl": "https://avatars.githubusercontent.com/u/1?s=64" } } },
+            "c1": null
+        } } })
+        .to_string();
+        let (url, _) = serve(vec![("200 OK", "X-RateLimit-Remaining: 4999\r\n", body)]);
+        let p = provider(&url);
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "tok".into(), env: &env, limits: &limits };
+        let r = remote::resolve("git@github.com:o/r.git", &[]).unwrap();
+        let res = author_avatars(&api, &r, &[sha_a.clone(), sha_b.clone()]).await.unwrap();
+        assert!(res[&sha_a].is_some());
+        assert!(!res.contains_key(&sha_b));
     }
 
     #[test]

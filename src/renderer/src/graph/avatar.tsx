@@ -1,5 +1,6 @@
 // Author avatars: Gravatar image when available, then the GitHub avatar, otherwise initials on a stable colour.
 import { memo, useEffect, useState, useSyncExternalStore } from 'react'
+import { noreplyAvatarUrl } from '../util/hosting'
 import { avatarColor, initials } from '../util/format'
 import { dropGithubAvatar, githubAvatar, subscribeGithubAvatars } from './authorAvatars'
 
@@ -37,10 +38,9 @@ interface Props {
 export const Avatar = memo(function Avatar({ name, email, size, remote, className }: Props) {
   const key = email.trim().toLowerCase()
   const [url, setUrl] = useState<string | null>(() => (remote && !missing.has(key) ? (urlByEmail.get(key) ?? null) : null))
-  const [failed, setFailed] = useState(() => missing.has(key))
+  const failed = remote && (missing.has(key) || !!noreplyAvatarUrl(key))
   useEffect(() => {
-    setFailed(remote && missing.has(key))
-    if (!remote || missing.has(key)) {
+    if (!remote || missing.has(key) || noreplyAvatarUrl(key)) {
       setUrl(null)
       return
     }
@@ -65,7 +65,6 @@ export const Avatar = memo(function Avatar({ name, email, size, remote, classNam
           onError={() => {
             if (url) {
               missing.add(key)
-              setFailed(true)
               setUrl(null)
             } else {
               dropGithubAvatar(key)
