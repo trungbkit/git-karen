@@ -481,6 +481,7 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
   /** Hunk being edited before staging; `diff` is the diff it was opened from */
   const [editing, setEditing] = useState<{ diff: FileDiff; hunk: number; text: string; error: string | null } | null>(null)
   const lastSignature = useRef<string | null>(null)
+  const openedHead = useRef<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
 
   const repoPath = cwd ?? repo.path
@@ -507,6 +508,7 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
         const signature = JSON.stringify(d)
         if (signature === lastSignature.current) return
         lastSignature.current = signature
+        if (d) openedHead.current = repo.status?.headSha ?? null
         setDiff(d)
         setSelected(new Set())
         setAnchor(null)
@@ -548,6 +550,11 @@ export function DiffView({ repo, target, cwd }: { repo: RepoTab; target: DiffTar
     if (diff === undefined) return
     if (diff !== null) {
       if (focusHunk >= diff.hunks.length) setFocusHunk(Math.max(0, diff.hunks.length - 1))
+      return
+    }
+    const head = repo.status?.headSha
+    if (isWorking && !cwd && head && openedHead.current && head !== openedHead.current) {
+      setCenter({ kind: 'diff', target: { kind: 'commit', sha: head, path } })
       return
     }
     if (!advanceOnEmpty.current || fileIndex >= 0 || siblings.length === 0) return

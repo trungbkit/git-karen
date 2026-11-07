@@ -341,8 +341,8 @@
 
 /* composer AI actions */
 .composer-ai { display: flex; gap: 6px; }
-.composer-ai .btn { display: inline-flex; align-items: center; gap: 5px; }
-.composer-ai .btn.grow { flex: 1; justify-content: center; }
+.composer-ai .btn { display: inline-flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; overflow: hidden; justify-content: center; }
+.composer-ai .btn-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* recovery (reflog) view */
 .reflog-filter { width: 260px; }

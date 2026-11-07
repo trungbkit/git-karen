@@ -218,7 +218,7 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
       drafts.set(repo.path, fresh)
       setDraftState(fresh)
       historyNav.current = null
-      if (repo.center.kind === 'diff') setCenter({ kind: 'graph' })
+      if (repo.center.kind === 'diff' && repo.center.target.kind !== 'working') setCenter({ kind: 'graph' })
     }
   }
 
@@ -699,7 +699,8 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
             onClick={() => void writeWithAi()}
             title={nothingStaged ? 'Write a commit message for all changes with AI' : 'Write a commit message for the staged changes with AI'}
           >
-            {generating ? <span className="spinner small" /> : <Icon name="sparkle" size={12} />} {generating ? 'Writing…' : 'Write message with AI'}
+            {generating ? <span className="spinner small" /> : <Icon name="sparkle" size={12} />}
+            <span className="btn-label">{generating ? 'Writing…' : 'Write message with AI'}</span>
           </button>
           <button
             className="btn small"
@@ -707,10 +708,10 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
             onClick={() => useStore.getState().setModal({ kind: 'splitCommit' })}
             title="Let AI group all changes into several commits"
           >
-            <Icon name="scissors" size={12} /> Split…
+            <Icon name="scissors" size={12} /> <span className="btn-label">Split…</span>
           </button>
           <button className="btn small" disabled={!!repo.busy || conflicted.length > 0} onClick={() => useStore.getState().setModal({ kind: 'smartCommit' })} title="Stage, commit, push and open pull requests in one go">
-            <Icon name="pull-request" size={12} /> Smart commit &amp; PR…
+            <Icon name="pull-request" size={12} /> <span className="btn-label">Smart commit &amp; PR…</span>
           </button>
         </div>
         <button className="btn primary" disabled={!canCommit || !!repo.busy} onClick={() => void commit()} title="⌘/Ctrl + Enter">
