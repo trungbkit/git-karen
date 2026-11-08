@@ -1,6 +1,8 @@
-// Author avatars: Gravatar image when available, otherwise initials on a stable colour.
-import { memo, useEffect, useState } from 'react'
+// Author avatars: Gravatar image when available, then the GitHub avatar, otherwise initials on a stable colour.
+import { memo, useEffect, useState, useSyncExternalStore } from 'react'
+import { noreplyAvatarUrl } from '../util/hosting'
 import { avatarColor, initials } from '../util/format'
+import { dropGithubAvatar, githubAvatar, subscribeGithubAvatars, useAvatarHost } from './authorAvatars'
 
 const urlByEmail = new Map<string, string>()
 const pending = new Map<string, Promise<string>>()
@@ -28,7 +30,7 @@ interface Props {
   name: string
   email: string
   size: number
-  /** Try Gravatar first */
+  /** Try Gravatar first, then GitHub */
   remote: boolean
   className?: string
 }
@@ -36,8 +38,9 @@ interface Props {
 export const Avatar = memo(function Avatar({ name, email, size, remote, className }: Props) {
   const key = email.trim().toLowerCase()
   const [url, setUrl] = useState<string | null>(() => (remote && !missing.has(key) ? (urlByEmail.get(key) ?? null) : null))
+  const failed = remote && (missing.has(key) || !!noreplyAvatarUrl(key))
   useEffect(() => {
-    if (!remote || missing.has(key)) {
+    if (!remote || missing.has(key) || noreplyAvatarUrl(key)) {
       setUrl(null)
       return
     }
@@ -48,18 +51,25 @@ export const Avatar = memo(function Avatar({ name, email, size, remote, classNam
     }
   }, [key, remote])
 
+  const host = useAvatarHost()
+  const gh = useSyncExternalStore(subscribeGithubAvatars, () => (remote ? githubAvatar(host, key) : undefined))
+  const src = url ?? (failed ? gh : undefined)
   const style = { width: size, height: size, background: avatarColor(email), fontSize: Math.max(7, Math.round(size * 0.42)) }
   return (
     <span className={`g-avatar ${className ?? ''}`} style={style}>
       {initials(name || email)}
-      {url && (
+      {src && (
         <img
-          src={url}
+          src={src}
           alt=""
           draggable={false}
           onError={() => {
-            missing.add(key)
-            setUrl(null)
+            if (url) {
+              missing.add(key)
+              setUrl(null)
+            } else {
+              dropGithubAvatar(host, key)
+            }
           }}
         />
       )}

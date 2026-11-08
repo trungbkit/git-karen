@@ -2,6 +2,7 @@
 // one query), REST elsewhere.
 use std::collections::HashMap;
 
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::remote::{github_graphql_url, RepoRef};
@@ -11,13 +12,18 @@ use super::{enc, pr_body, Api, CiCheck, CiState, CiStatus, CreatePrInput, Create
 const CI_BATCH: usize = 50;
 
 pub(super) async fn graphql(api: &Api<'_>, query: &str, variables: Value) -> Result<Value, String> {
+    graphql_partial(api, query, variables).await.map(|(data, _)| data)
+}
+
+/// Like `graphql`, plus whether GitHub reported errors next to the data (a timeout or limit can null some fields).
+async fn graphql_partial(api: &Api<'_>, query: &str, variables: Value) -> Result<(Value, bool), String> {
     let body = json!({ "query": query, "variables": variables });
     let res = api.json("POST", &github_graphql_url(&api.provider.api_url), Some(&body)).await?;
     let errors: Vec<String> = res["errors"].as_array().map(|a| a.iter().filter_map(|e| e["message"].as_str().map(String::from)).collect()).unwrap_or_default();
     if res["data"].is_null() || (!errors.is_empty() && res["data"]["repository"].is_null() && res["data"]["viewer"].is_null()) {
         return Err(format!("GitHub API error: {}", if errors.is_empty() { "empty response".into() } else { errors.join("; ") }));
     }
-    Ok(res["data"].clone())
+    Ok((res["data"].clone(), !errors.is_empty()))
 }
 
 pub(super) fn s(v: &Value) -> String {
@@ -122,8 +128,54 @@ const CI_FRAGMENT: &str = r#"fragment ci on Commit {
 
 /// One query for many commits: an aliased `object(oid:)` per sha. Shas are validated hex, so inlining them is safe.
 pub fn ci_query(shas: &[String]) -> String {
-    let fields: String = shas.iter().enumerate().map(|(i, sha)| format!("    c{i}: object(oid: \"{sha}\") {{ ...ci }}\n")).collect();
-    format!("query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}\n{CI_FRAGMENT}")
+    format!("{}\n{CI_FRAGMENT}", object_query(shas, "...ci"))
+}
+
+fn object_query(shas: &[String], selection: &str) -> String {
+    let fields: String = shas.iter().enumerate().map(|(i, sha)| format!("    c{i}: object(oid: \"{sha}\") {{ {selection} }}\n")).collect();
+    format!("query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}")
+}
+
+pub fn avatar_query(shas: &[String]) -> String {
+    object_query(shas, "... on Commit { author { user { avatarUrl(size: 64) } } }")
+}
+
+pub fn parse_avatar(commit: &Value) -> Option<String> {
+    commit["author"]["user"]["avatarUrl"].as_str().filter(|u| !u.is_empty()).map(String::from)
+}
+
+#[derive(Serialize, Default, Debug, PartialEq)]
+pub struct AuthorAvatars {
+    /// Avatar URL by sha, or null when the commit's author isn't linked to a GitHub user
+    pub avatars: HashMap<String, Option<String>>,
+    /// Shas GitHub cleanly reported as not in the repository (not pushed yet, or only on a fork).
+    /// Shas in neither field weren't answered and are worth asking again.
+    pub unknown: Vec<String>,
+}
+
+pub async fn author_avatars(api: &Api<'_>, r: &RepoRef, shas: &[String]) -> Result<AuthorAvatars, String> {
+    let mut out = AuthorAvatars::default();
+    for (n, batch) in shas.chunks(CI_BATCH).enumerate() {
+        let (data, partial) = match graphql_partial(api, &avatar_query(batch), json!({ "owner": r.owner, "name": r.name })).await {
+            Ok(res) => res,
+            Err(e) if n == 0 => return Err(e),
+            // keep what the earlier batches found; the rest stays unanswered
+            Err(e) => {
+                eprintln!("GitHub avatars for {}: {e}", r.path);
+                break;
+            }
+        };
+        for (i, sha) in batch.iter().enumerate() {
+            let commit = &data["repository"][format!("c{i}")];
+            if !commit.is_null() {
+                out.avatars.insert(sha.clone(), parse_avatar(commit));
+            } else if !partial {
+                // with errors in the response a null may be a timeout rather than a missing commit
+                out.unknown.push(sha.clone());
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn check_state(node: &Value) -> CiState {
@@ -359,5 +411,85 @@ mod tests {
         assert_eq!(res[&sha_b], None);
         assert_eq!(seen.lock().unwrap().len(), 1);
         assert!(seen.lock().unwrap()[0].starts_with("POST /graphql "));
+    }
+
+    #[tokio::test]
+    async fn reports_commits_github_does_not_have_as_unknown() {
+        let (sha_a, sha_b) = ("a".repeat(40), "b".repeat(40));
+        let body = json!({ "data": { "repository": {
+            "c0": { "author": { "user": { "avatarUrl": "https://avatars.githubusercontent.com/u/1?s=64" } } },
+            "c1": null
+        } } })
+        .to_string();
+        let (url, _) = serve(vec![("200 OK", "X-RateLimit-Remaining: 4999\r\n", body)]);
+        let p = provider(&url);
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "tok".into(), env: &env, limits: &limits };
+        let r = remote::resolve("git@github.com:o/r.git", &[]).unwrap();
+        let res = author_avatars(&api, &r, &[sha_a.clone(), sha_b.clone()]).await.unwrap();
+        assert!(res.avatars[&sha_a].is_some());
+        assert!(!res.avatars.contains_key(&sha_b));
+        assert_eq!(res.unknown, vec![sha_b]);
+    }
+
+    #[tokio::test]
+    async fn leaves_nulls_unanswered_when_the_response_has_errors() {
+        let (sha_a, sha_b) = ("a".repeat(40), "b".repeat(40));
+        let body = json!({
+            "data": { "repository": { "c0": { "author": { "user": null } }, "c1": null } },
+            "errors": [{ "message": "Timeout on validation of query" }]
+        })
+        .to_string();
+        let (url, _) = serve(vec![("200 OK", "X-RateLimit-Remaining: 4999\r\n", body)]);
+        let p = provider(&url);
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "tok".into(), env: &env, limits: &limits };
+        let r = remote::resolve("git@github.com:o/r.git", &[]).unwrap();
+        let res = author_avatars(&api, &r, &[sha_a.clone(), sha_b.clone()]).await.unwrap();
+        assert_eq!(res.avatars.get(&sha_a), Some(&None));
+        assert!(!res.avatars.contains_key(&sha_b));
+        assert!(res.unknown.is_empty());
+    }
+
+    #[tokio::test]
+    async fn keeps_earlier_batches_when_a_later_one_fails() {
+        let shas: Vec<String> = (0..CI_BATCH + 1).map(|i| format!("{i:040x}")).collect();
+        let first: serde_json::Map<String, Value> =
+            (0..CI_BATCH).map(|i| (format!("c{i}"), json!({ "author": { "user": { "avatarUrl": format!("https://avatars.githubusercontent.com/u/{i}") } } }))).collect();
+        let ok = json!({ "data": { "repository": first } }).to_string();
+        let failed = json!({ "data": null, "errors": [{ "message": "Something went wrong" }] }).to_string();
+        let (url, _) = serve(vec![("200 OK", "X-RateLimit-Remaining: 4999\r\n", ok), ("200 OK", "X-RateLimit-Remaining: 4998\r\n", failed)]);
+        let p = provider(&url);
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "tok".into(), env: &env, limits: &limits };
+        let r = remote::resolve("git@github.com:o/r.git", &[]).unwrap();
+        let res = author_avatars(&api, &r, &shas).await.unwrap();
+        assert_eq!(res.avatars.len(), CI_BATCH);
+        assert!(!res.avatars.contains_key(&shas[CI_BATCH]));
+        assert!(res.unknown.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fails_the_avatars_when_the_first_batch_errors() {
+        let body = json!({ "data": { "repository": null }, "errors": [{ "message": "Could not resolve to a Repository" }] }).to_string();
+        let (url, _) = serve(vec![("200 OK", "X-RateLimit-Remaining: 4999\r\n", body)]);
+        let p = provider(&url);
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "tok".into(), env: &env, limits: &limits };
+        let r = remote::resolve("git@github.com:o/r.git", &[]).unwrap();
+        assert!(author_avatars(&api, &r, &["a".repeat(40)]).await.is_err());
+    }
+
+    #[test]
+    fn parses_author_avatars() {
+        let q = avatar_query(&["a".repeat(40)]);
+        assert!(q.contains("c0: object(oid: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") { ... on Commit { author { user { avatarUrl(size: 64) } } } }"));
+        assert_eq!(parse_avatar(&json!({ "author": { "user": { "avatarUrl": "https://avatars.githubusercontent.com/u/1?s=64" } } })).as_deref(), Some("https://avatars.githubusercontent.com/u/1?s=64"));
+        assert_eq!(parse_avatar(&json!({ "author": { "user": null } })), None);
+        assert_eq!(parse_avatar(&Value::Null), None);
     }
 }

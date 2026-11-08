@@ -362,7 +362,7 @@ export function PreferencesModal() {
                   <option value="compact">Compact (small nodes, narrow lanes)</option>
                 </select>
               </Field>
-              {check('showAvatars', 'Show author avatars from Gravatar (initials otherwise)')}
+              {check('showAvatars', 'Show author avatars from Gravatar or GitHub (initials otherwise)')}
               {check('showWorktreeWips', 'Show a WIP row for each worktree with uncommitted changes')}
               {check('showCommitDescription', 'Show commit description in graph')}
               {check('showAuthorColumn', 'Show author column')}

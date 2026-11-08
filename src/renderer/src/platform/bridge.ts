@@ -178,7 +178,8 @@ const integrations: IntegrationsApi = {
   checkoutPullRequest: (repo, remote, number, headBranch, sameRepo) => hostingCall('checkoutPullRequest', repo, remote, number, headBranch, sameRepo),
   fetchPullRequest: (repo, remote, number, headBranch, sameRepo, baseBranch) =>
     hostingCall('fetchPullRequest', repo, remote, number, headBranch, sameRepo, baseBranch),
-  ciStatuses: (repo, remote, shas, maxAgeSecs) => hostingCall('ciStatuses', repo, remote, shas, maxAgeSecs)
+  ciStatuses: (repo, remote, shas, maxAgeSecs) => hostingCall('ciStatuses', repo, remote, shas, maxAgeSecs),
+  authorAvatars: (repo, remote, shas) => hostingCall('authorAvatars', repo, remote, shas)
 }
 
 window.git = git

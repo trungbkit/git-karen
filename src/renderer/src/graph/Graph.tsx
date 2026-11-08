@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type ReactNode } from 'react'
-import type { Preferences, Ref } from '@shared/types'
+import type { Commit, Preferences, Ref } from '@shared/types'
 import { useStore, type RepoTab } from '../state/store'
 import { dropMenuItems } from '../actions/refActions'
 import { showContextMenu, type MenuItem } from '../ui/ContextMenu'
@@ -16,6 +16,7 @@ import { GraphRowView, type WipSummary } from './rows'
 import { matchesPreset, presetMenuItems } from './presets'
 import { useCommitStats, useStatsScale } from './stats'
 import { useCiPolling } from '../state/hosting'
+import { AvatarHostProvider, useAuthorAvatars } from './authorAvatars'
 import { SearchBox, useCommitSearch } from './SearchBox'
 import { BehindBanner } from './BehindBanner'
 import { DelayedGraphSkeleton } from '../ui/Skeleton'
@@ -333,6 +334,15 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const { stats, version } = useCommitStats(repo.path, visibleShas, prefs.showChangesColumn)
   const statsMax = useStatsScale(stats, version)
   useCiPolling(repo.path, visibleShas)
+  const visibleCommits = useMemo(() => {
+    const out: Commit[] = []
+    for (let i = first; i < last; i++) {
+      const node = layout.rows[i].node
+      if (node.commit) out.push(node.commit)
+    }
+    return out
+  }, [first, last, layout.rows])
+  const avatarHost = useAuthorAvatars(repo.path, visibleCommits, prefs.showAvatars)
 
   const visibleRows: ReactNode[] = []
   for (let i = first; i < last; i++) {
@@ -443,7 +453,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
           <div className="graph-empty">No commits yet — make your first commit from the panel on the right.</div>
         )}
         <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minColsWidth + tail }}>
-          {visibleRows}
+          <AvatarHostProvider value={avatarHost}>{visibleRows}</AvatarHostProvider>
         </div>
       </div>
     </div>

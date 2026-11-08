@@ -85,3 +85,9 @@ export function parseReviewers(text: string): string[] {
   }
   return out
 }
+
+export function noreplyAvatarUrl(email: string): string | null {
+  const m = /^(?:(\d+)\+)?([^@+]+)@users\.noreply\.github\.com$/i.exec(email.trim())
+  if (!m) return null
+  return m[1] ? `https://avatars.githubusercontent.com/u/${m[1]}?s=64` : `https://github.com/${encodeURIComponent(m[2])}.png?size=64`
+}
