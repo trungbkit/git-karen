@@ -280,6 +280,28 @@ export function PreferencesModal() {
                 </Field>
               </div>
               <div className="field">
+                <span className="field-label" id="layout-label">
+                  Layout
+                </span>
+                <div className="layout-options" role="group" aria-labelledby="layout-label">
+                  {([false, true] as const).map((island) => (
+                    <button key={String(island)} type="button" className={`layout-option${draft.islandLayout === island ? ' selected' : ''}`} aria-pressed={draft.islandLayout === island} onClick={() => set('islandLayout', island)}>
+                      <span className={`layout-preview${island ? ' island' : ''}`}>
+                        <i className="lp-bar" />
+                        <i className="lp-bar" />
+                        <span className="lp-cols">
+                          <i />
+                          <i />
+                          <i />
+                        </span>
+                        <i className="lp-bar" />
+                      </span>
+                      {island ? 'Island' : 'Classic'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="field">
                 <span className="field-label" id="accent-label">
                   Accent color
                 </span>

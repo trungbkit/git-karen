@@ -39,6 +39,7 @@ export function App() {
   const theme = useStore((s) => s.prefs.theme)
   const accentColor = useStore((s) => s.prefs.accentColor)
   const density = useStore((s) => s.prefs.density)
+  const islandLayout = useStore((s) => s.prefs.islandLayout)
   const fontSize = useStore((s) => s.prefs.fontSize)
   const uiFont = useStore((s) => s.prefs.uiFont)
   const monoFont = useStore((s) => s.prefs.monoFont)
@@ -89,7 +90,7 @@ export function App() {
       {repo ? (
         <>
           <Toolbar repo={repo} />
-          <div className="app-body" style={{ '--left-w': `${leftWidth}px`, '--right-w': `${rightWidth}px` } as CSSProperties}>
+          <div className={islandLayout ? 'app-body island' : 'app-body'} style={{ '--left-w': `${leftWidth}px`, '--right-w': `${rightWidth}px` } as CSSProperties}>
             {showLeft && <LeftPanel repo={repo} />}
             {showLeft && (
               <Splitter
