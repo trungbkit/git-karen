@@ -8,6 +8,7 @@ import { formatDate, fullDate, shortSha } from '../util/format'
 import { commitMenuItems, copyText, showInGraph } from '../actions/refActions'
 import { openCompare } from '../actions/compareActions'
 import { Avatar } from '../graph/avatar'
+import { useAuthorAvatars } from '../graph/authorAvatars'
 import { DiffBody, useNewSideLines } from './DiffView'
 import { ImageDiff, isImagePath, isSvgPath } from './ImageDiff'
 import { IGNORE_WHITESPACE_KEY, WRAP_KEY, readLocal, useStoredFlag, writeLocal } from '../diff/settings'
@@ -281,6 +282,7 @@ function CompareDiff({ repo, from, to, file }: { repo: RepoTab; from: string; to
 function CommitSection({ repo, title, commits, total }: { repo: RepoTab; title: string; commits: Commit[]; total: number }) {
   const dateMode = useStore((s) => s.prefs.dateFormat)
   const showAvatars = useStore((s) => s.prefs.showAvatars)
+  useAuthorAvatars(repo.path, commits, showAvatars)
   const selection = repo.selection
   const loaded = useMemo(() => new Set(repo.commits.map((c) => c.sha)), [repo.commits])
   const select = (sha: string) => useStore.getState().select({ kind: 'commit', shas: [sha] })
