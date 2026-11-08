@@ -141,7 +141,7 @@ pub fn parse_avatar(commit: &Value) -> Option<String> {
 pub async fn author_avatars(api: &Api<'_>, r: &RepoRef, shas: &[String]) -> Result<HashMap<String, Option<String>>, String> {
     let mut out = HashMap::new();
     for batch in shas.chunks(CI_BATCH) {
-        let Ok(data) = graphql(api, &avatar_query(batch), json!({ "owner": r.owner, "name": r.name })).await else { break };
+        let data = graphql(api, &avatar_query(batch), json!({ "owner": r.owner, "name": r.name })).await?;
         for (i, sha) in batch.iter().enumerate() {
             let commit = &data["repository"][format!("c{i}")];
             if !commit.is_null() {
@@ -404,6 +404,18 @@ mod tests {
         let res = author_avatars(&api, &r, &[sha_a.clone(), sha_b.clone()]).await.unwrap();
         assert!(res[&sha_a].is_some());
         assert!(!res.contains_key(&sha_b));
+    }
+
+    #[tokio::test]
+    async fn fails_the_avatars_when_a_batch_errors() {
+        let body = json!({ "data": { "repository": null }, "errors": [{ "message": "Could not resolve to a Repository" }] }).to_string();
+        let (url, _) = serve(vec![("200 OK", "X-RateLimit-Remaining: 4999\r\n", body)]);
+        let p = provider(&url);
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "tok".into(), env: &env, limits: &limits };
+        let r = remote::resolve("git@github.com:o/r.git", &[]).unwrap();
+        assert!(author_avatars(&api, &r, &["a".repeat(40)]).await.is_err());
     }
 
     #[test]

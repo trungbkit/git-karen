@@ -886,11 +886,8 @@ impl Integrations {
         if shas.is_empty() {
             return Ok(HashMap::new());
         }
-        let Ok(api) = self.api(&r.provider).await else { return Ok(HashMap::new()) };
-        if api.blocked_for().is_some() {
-            return Ok(HashMap::new());
-        }
-        Ok(github::author_avatars(&api, &r, &shas).await.unwrap_or_default())
+        let api = self.api(&r.provider).await?;
+        github::author_avatars(&api, &r, &shas).await
     }
 
     // ------------------------------------------------------------- dispatch
@@ -1073,6 +1070,7 @@ mod tests {
         // without a token, CI polling is silently empty and PR listing explains what to do
         assert!(s.ci_statuses(repo, None, vec!["a".repeat(40)], 60).await.unwrap().is_empty());
         assert!(s.author_avatars(repo, None, vec!["a".repeat(40)]).await.unwrap().is_empty());
+        assert!(s.author_avatars(repo, Some("origin".into()), vec!["a".repeat(40)]).await.unwrap_err().contains("Preferences > Integrations"));
         assert!(s.pull_requests(repo, Some("origin".into())).await.unwrap_err().contains("Preferences > Integrations"));
     }
 
