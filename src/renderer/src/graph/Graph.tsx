@@ -16,7 +16,7 @@ import { GraphRowView, type WipSummary } from './rows'
 import { matchesPreset, presetMenuItems } from './presets'
 import { useCommitStats, useStatsScale } from './stats'
 import { useCiPolling } from '../state/hosting'
-import { useAuthorAvatars } from './authorAvatars'
+import { AvatarHostProvider, useAuthorAvatars } from './authorAvatars'
 import { SearchBox, useCommitSearch } from './SearchBox'
 import { BehindBanner } from './BehindBanner'
 import { DelayedGraphSkeleton } from '../ui/Skeleton'
@@ -342,7 +342,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
     }
     return out
   }, [first, last, layout.rows])
-  useAuthorAvatars(repo.path, visibleCommits, prefs.showAvatars)
+  const avatarHost = useAuthorAvatars(repo.path, visibleCommits, prefs.showAvatars)
 
   const visibleRows: ReactNode[] = []
   for (let i = first; i < last; i++) {
@@ -453,7 +453,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
           <div className="graph-empty">No commits yet — make your first commit from the panel on the right.</div>
         )}
         <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minColsWidth + tail }}>
-          {visibleRows}
+          <AvatarHostProvider value={avatarHost}>{visibleRows}</AvatarHostProvider>
         </div>
       </div>
     </div>

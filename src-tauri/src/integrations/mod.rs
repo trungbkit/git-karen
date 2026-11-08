@@ -877,14 +877,15 @@ impl Integrations {
         Ok(shas.iter().filter_map(|s| known.get(s).and_then(|e| e.status.clone()).map(|st| (s.clone(), st))).collect())
     }
 
-    pub async fn author_avatars(&self, repo: &str, remote: Option<String>, shas: Vec<String>) -> Result<HashMap<String, Option<String>>, String> {
-        let Ok((_, r)) = self.repo_ref(repo, remote).await else { return Ok(HashMap::new()) };
+    /// Shas left out of the result (no GitHub remote, past MAX_CI_SHAS) count as unanswered, not as unknown to GitHub.
+    pub async fn author_avatars(&self, repo: &str, remote: Option<String>, shas: Vec<String>) -> Result<github::AuthorAvatars, String> {
+        let Ok((_, r)) = self.repo_ref(repo, remote).await else { return Ok(Default::default()) };
         if r.provider.kind != Kind::Github {
-            return Ok(HashMap::new());
+            return Ok(Default::default());
         }
         let shas: Vec<String> = shas.into_iter().map(|s| s.to_ascii_lowercase()).filter(|s| is_full_sha(s)).take(MAX_CI_SHAS).collect();
         if shas.is_empty() {
-            return Ok(HashMap::new());
+            return Ok(Default::default());
         }
         let api = self.api(&r.provider).await?;
         github::author_avatars(&api, &r, &shas).await
@@ -1069,7 +1070,7 @@ mod tests {
         assert!(s.repo_info(repo, Some("--upload-pack=x".into())).await.unwrap().is_none());
         // without a token, CI polling is silently empty and PR listing explains what to do
         assert!(s.ci_statuses(repo, None, vec!["a".repeat(40)], 60).await.unwrap().is_empty());
-        assert!(s.author_avatars(repo, None, vec!["a".repeat(40)]).await.unwrap().is_empty());
+        assert_eq!(s.author_avatars(repo, None, vec!["a".repeat(40)]).await.unwrap(), Default::default());
         assert!(s.author_avatars(repo, Some("origin".into()), vec!["a".repeat(40)]).await.unwrap_err().contains("Preferences > Integrations"));
         assert!(s.pull_requests(repo, Some("origin".into())).await.unwrap_err().contains("Preferences > Integrations"));
     }

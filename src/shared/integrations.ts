@@ -234,6 +234,13 @@ export interface IssueLinkConfig {
   providerLinks: boolean
 }
 
+export interface AuthorAvatars {
+  /** Avatar URL by sha, or null when the author isn't linked to a GitHub user */
+  avatars: Record<string, string | null>
+  /** Shas GitHub doesn't have (not pushed yet, or only on a fork) */
+  unknown: string[]
+}
+
 export interface IntegrationsApi {
   accounts(): Promise<HostingAccount[]>
   saveHost(config: HostConfig): Promise<HostingAccount[]>
@@ -265,5 +272,6 @@ export interface IntegrationsApi {
   fetchPullRequest(repo: string, remote: string | null, number: number, headBranch: string, sameRepo: boolean, baseBranch: string): Promise<string>
   /** CI status by sha for the commits that have checks (cached in the backend; stale entries older than maxAgeSecs are refetched) */
   ciStatuses(repo: string, remote: string | null, shas: string[], maxAgeSecs: number): Promise<Record<string, CiStatus>>
-  authorAvatars(repo: string, remote: string | null, shas: string[]): Promise<Record<string, string | null>>
+  /** GitHub avatars of the commits' authors; shas in neither field weren't answered */
+  authorAvatars(repo: string, remote: string | null, shas: string[]): Promise<AuthorAvatars>
 }

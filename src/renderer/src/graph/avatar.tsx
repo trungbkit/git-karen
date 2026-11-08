@@ -2,7 +2,7 @@
 import { memo, useEffect, useState, useSyncExternalStore } from 'react'
 import { noreplyAvatarUrl } from '../util/hosting'
 import { avatarColor, initials } from '../util/format'
-import { dropGithubAvatar, githubAvatar, subscribeGithubAvatars } from './authorAvatars'
+import { dropGithubAvatar, githubAvatar, subscribeGithubAvatars, useAvatarHost } from './authorAvatars'
 
 const urlByEmail = new Map<string, string>()
 const pending = new Map<string, Promise<string>>()
@@ -51,7 +51,8 @@ export const Avatar = memo(function Avatar({ name, email, size, remote, classNam
     }
   }, [key, remote])
 
-  const gh = useSyncExternalStore(subscribeGithubAvatars, () => (remote ? githubAvatar(key) : undefined))
+  const host = useAvatarHost()
+  const gh = useSyncExternalStore(subscribeGithubAvatars, () => (remote ? githubAvatar(host, key) : undefined))
   const src = url ?? (failed ? gh : undefined)
   const style = { width: size, height: size, background: avatarColor(email), fontSize: Math.max(7, Math.round(size * 0.42)) }
   return (
@@ -67,7 +68,7 @@ export const Avatar = memo(function Avatar({ name, email, size, remote, classNam
               missing.add(key)
               setUrl(null)
             } else {
-              dropGithubAvatar(key)
+              dropGithubAvatar(host, key)
             }
           }}
         />

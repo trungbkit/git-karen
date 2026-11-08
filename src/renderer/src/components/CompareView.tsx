@@ -8,7 +8,7 @@ import { formatDate, fullDate, shortSha } from '../util/format'
 import { commitMenuItems, copyText, showInGraph } from '../actions/refActions'
 import { openCompare } from '../actions/compareActions'
 import { Avatar } from '../graph/avatar'
-import { useAuthorAvatars } from '../graph/authorAvatars'
+import { AvatarHostProvider, useAuthorAvatars } from '../graph/authorAvatars'
 import { DiffBody, useNewSideLines } from './DiffView'
 import { ImageDiff, isImagePath, isSvgPath } from './ImageDiff'
 import { IGNORE_WHITESPACE_KEY, WRAP_KEY, readLocal, useStoredFlag, writeLocal } from '../diff/settings'
@@ -282,38 +282,40 @@ function CompareDiff({ repo, from, to, file }: { repo: RepoTab; from: string; to
 function CommitSection({ repo, title, commits, total }: { repo: RepoTab; title: string; commits: Commit[]; total: number }) {
   const dateMode = useStore((s) => s.prefs.dateFormat)
   const showAvatars = useStore((s) => s.prefs.showAvatars)
-  useAuthorAvatars(repo.path, commits, showAvatars)
+  const avatarHost = useAuthorAvatars(repo.path, commits, showAvatars)
   const selection = repo.selection
   const loaded = useMemo(() => new Set(repo.commits.map((c) => c.sha)), [repo.commits])
   const select = (sha: string) => useStore.getState().select({ kind: 'commit', shas: [sha] })
   return (
-    <div className="cmp-section">
-      <div className="cmp-section-head">
-        {title} <span className="lp-count">{total}</span>
+    <AvatarHostProvider value={avatarHost}>
+      <div className="cmp-section">
+        <div className="cmp-section-head">
+          {title} <span className="lp-count">{total}</span>
+        </div>
+        {commits.length === 0 && <div className="empty-list">None</div>}
+        {commits.map((c) => {
+          const selected = selection?.kind === 'commit' && selection.shas.includes(c.sha)
+          return (
+            <div
+              key={c.sha}
+              className={`reflog-row ${selected ? 'selected' : ''}`}
+              onClick={() => select(c.sha)}
+              onDoubleClick={() => loaded.has(c.sha) && showInGraph(c.sha)}
+              onContextMenu={(e) => (select(c.sha), showContextMenu(e, commitMenuItems(repo, c.sha)))}
+              title={loaded.has(c.sha) ? 'Double-click to view in graph' : undefined}
+            >
+              <Avatar name={c.author.name} email={c.author.email} size={16} remote={showAvatars} />
+              <span className="ellipsis">{c.summary}</span>
+              <span className="muted cmp-author ellipsis">{c.author.name}</span>
+              <span className="mono reflog-sha">{shortSha(c.sha)}</span>
+              <span className="muted reflog-date" title={fullDate(c.author.date)}>
+                {formatDate(c.author.date, dateMode)}
+              </span>
+            </div>
+          )
+        })}
+        {total > commits.length && <div className="empty-list">and {total - commits.length} more…</div>}
       </div>
-      {commits.length === 0 && <div className="empty-list">None</div>}
-      {commits.map((c) => {
-        const selected = selection?.kind === 'commit' && selection.shas.includes(c.sha)
-        return (
-          <div
-            key={c.sha}
-            className={`reflog-row ${selected ? 'selected' : ''}`}
-            onClick={() => select(c.sha)}
-            onDoubleClick={() => loaded.has(c.sha) && showInGraph(c.sha)}
-            onContextMenu={(e) => (select(c.sha), showContextMenu(e, commitMenuItems(repo, c.sha)))}
-            title={loaded.has(c.sha) ? 'Double-click to view in graph' : undefined}
-          >
-            <Avatar name={c.author.name} email={c.author.email} size={16} remote={showAvatars} />
-            <span className="ellipsis">{c.summary}</span>
-            <span className="muted cmp-author ellipsis">{c.author.name}</span>
-            <span className="mono reflog-sha">{shortSha(c.sha)}</span>
-            <span className="muted reflog-date" title={fullDate(c.author.date)}>
-              {formatDate(c.author.date, dateMode)}
-            </span>
-          </div>
-        )
-      })}
-      {total > commits.length && <div className="empty-list">and {total - commits.length} more…</div>}
-    </div>
+    </AvatarHostProvider>
   )
 }
