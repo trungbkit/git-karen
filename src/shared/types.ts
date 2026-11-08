@@ -393,6 +393,7 @@ export interface Preferences {
   accentColor: string
   /** Row heights of the graph, file lists and left panel (CSS `--row-h`) */
   density: 'comfortable' | 'compact'
+  islandLayout: boolean
   autoFetchMinutes: number
   defaultBranchName: string
   commitLimit: number
@@ -486,6 +487,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   theme: 'dark',
   accentColor: '',
   density: 'comfortable',
+  islandLayout: false,
   autoFetchMinutes: 1,
   defaultBranchName: 'main',
   commitLimit: 2000,
