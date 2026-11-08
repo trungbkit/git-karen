@@ -53,6 +53,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&i("repo:pull", "Pull", "CmdOrCtrl+Shift+L")?)
         .item(&i("repo:pullRebase", "Pull (Rebase)", "")?)
         .item(&i("repo:push", "Push", "CmdOrCtrl+Shift+K")?)
+        .item(&i("repo:forcePush", "Force Push…", "")?)
         .separator()
         .item(&i("repo:createBranch", "Create Branch", "CmdOrCtrl+B")?)
         .item(&i("view:switchBranch", "Switch Branch…", "CmdOrCtrl+Shift+B")?)

@@ -4,6 +4,7 @@
 /** Fixes a toast can offer; actions/errorActions.ts maps each to the app's own actions. */
 export type GitFixAction =
   | 'pullRebaseThenPush'
+  | 'forcePush'
   | 'pullRebase'
   | 'pushSetUpstream'
   | 'openConflicts'
@@ -40,6 +41,8 @@ interface Rule {
 }
 
 const isPull = (label: string) => /\bpull/i.test(label)
+/** The push of the current branch (refActions' pushCurrent / publishCurrent), not of another branch by name */
+const isCurrentPush = (label: string) => label === 'Pushing'
 
 /** First match wins, so the more specific rules come first. */
 const RULES: Rule[] = [
@@ -79,10 +82,20 @@ const RULES: Rule[] = [
   {
     kind: 'nonFastForward',
     test: /\[rejected\][^\n]*\((?:non-fast-forward|fetch first)\)|Updates were rejected because (?:the tip of your current branch is behind|the remote contains work)/i,
-    hint: () => ({
-      message: 'The remote branch has commits you do not have yet. Pull them in, replaying your commits on top, then push again.',
-      actions: [{ id: 'pullRebaseThenPush', label: 'Pull (rebase) & push' }]
-    })
+    hint: (label) =>
+      isCurrentPush(label)
+        ? {
+            message:
+              'The remote branch has commits you do not have yet. Pull them in, replaying your commits on top, then push again. If you rewrote this branch (rebase, amend), force push instead to replace the remote history.',
+            actions: [
+              { id: 'pullRebaseThenPush', label: 'Pull (rebase) & push' },
+              { id: 'forcePush', label: 'Force push…' }
+            ]
+          }
+        : {
+            message: 'The remote branch has commits you do not have yet. Pull them in, replaying your commits on top, then push again.',
+            actions: [{ id: 'pullRebaseThenPush', label: 'Pull (rebase) & push' }]
+          }
   },
   {
     kind: 'diverged',

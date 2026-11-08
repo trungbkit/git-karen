@@ -11,11 +11,17 @@ describe('describeGitError', () => {
  ! [rejected]        main -> main (non-fast-forward)
 error: failed to push some refs to 'github.com:owner/repo.git'`
     expect(kind(rejected, 'Pushing')).toBe('nonFastForward')
-    expect(actions(rejected, 'Pushing')).toEqual(['pullRebaseThenPush'])
+    expect(actions(rejected, 'Pushing')).toEqual(['pullRebaseThenPush', 'forcePush'])
     const fetchFirst = ` ! [rejected]        main -> main (fetch first)
 error: failed to push some refs to 'https://github.com/owner/repo.git'`
     expect(actions(fetchFirst)).toEqual(['pullRebaseThenPush'])
     expect(describeGitError(rejected)?.actions[0].label).toBe('Pull (rebase) & push')
+  })
+
+  it('offers force push only for the current branch push', () => {
+    const rejected = ' ! [rejected]        topic -> topic (non-fast-forward)\nerror: failed to push some refs to \'origin\''
+    expect(actions(rejected, 'Pushing topic')).toEqual(['pullRebaseThenPush'])
+    expect(actions(rejected, 'Force pushing')).toEqual(['pullRebaseThenPush'])
   })
 
   it('does not treat a rejected force-with-lease as non-fast-forward', () => {

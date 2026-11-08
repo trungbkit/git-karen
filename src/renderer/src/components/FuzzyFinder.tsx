@@ -22,6 +22,7 @@ const COMMAND_LABELS: { command: string; label: string; icon: IconName; needsRep
   { command: COMMANDS.pull, label: 'Pull', icon: 'pull', needsRepo: true },
   { command: COMMANDS.pullRebase, label: 'Pull (rebase)', icon: 'pull', needsRepo: true },
   { command: COMMANDS.push, label: 'Push', icon: 'push', needsRepo: true },
+  { command: COMMANDS.forcePush, label: 'Force push…', icon: 'push', needsRepo: true },
   { command: COMMANDS.switchBranch, label: 'Switch branch…', icon: 'branch', needsRepo: true },
   { command: COMMANDS.createBranch, label: 'Create branch', icon: 'branch', needsRepo: true },
   { command: COMMANDS.stash, label: 'Stash changes', icon: 'stash', needsRepo: true },

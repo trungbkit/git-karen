@@ -12,6 +12,7 @@ export const COMMANDS = {
   pull: 'repo:pull',
   pullRebase: 'repo:pullRebase',
   push: 'repo:push',
+  forcePush: 'repo:forcePush',
   switchBranch: 'view:switchBranch',
   openWorkspace: 'view:workspace',
   createBranch: 'repo:createBranch',

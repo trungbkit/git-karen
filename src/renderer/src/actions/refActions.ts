@@ -225,6 +225,11 @@ export async function pushCurrent(repo: RepoTab, force = false) {
     return
   }
   const upstream = repo.status?.upstream
+  if (force && !upstream) {
+    // nothing to overwrite, and a forced publish would skip the confirmation: push it normally instead
+    store().toast({ kind: 'error', title: 'Cannot force push', message: `${branch} has no upstream branch. Push it first to publish it.` })
+    return
+  }
   if (upstream) {
     if (!force) {
       await store().run('Pushing', (r) => git().push(r, { force }))

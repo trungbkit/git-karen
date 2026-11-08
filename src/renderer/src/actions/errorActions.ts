@@ -21,6 +21,11 @@ const FIXES: Record<GitFixAction, (repo: string, label: string) => Promise<unkno
     // the rebase may have stopped on a conflict: then there is nothing to push yet
     if (repo && !repo.status?.operation) await pushCurrent(repo)
   },
+  forcePush(path) {
+    // pushCurrent asks for confirmation, with what the force push overwrites, before running it
+    const repo = focusRepo(path)
+    if (repo) return pushCurrent(repo, true)
+  },
   pullRebase(path) {
     if (focusRepo(path)) return pull('rebase')
   },

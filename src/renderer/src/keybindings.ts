@@ -174,6 +174,8 @@ export function dispatch(command: string): void {
       return void pull('rebase')
     case COMMANDS.push:
       return void pushCurrent(repo)
+    case COMMANDS.forcePush:
+      return void pushCurrent(repo, true)
     case COMMANDS.createBranch:
       return void createBranchAt()
     case COMMANDS.stash:
