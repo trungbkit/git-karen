@@ -230,8 +230,8 @@ export function StagingPanel({ repo }: { repo: RepoTab }) {
       const stillOpen = now?.kind === 'diff' && now.target === open
       if (openCommitted && sha && stillOpen) {
         useStore.getState().select({ kind: 'commit', shas: [sha] }, repo.path)
-        setCenter({ kind: 'diff', target: { kind: 'commit', sha, path: openCommitted.path, oldPath: openCommitted.oldPath } })
-      } else if (now?.kind === 'diff' && now.target.kind !== 'working') setCenter({ kind: 'graph' })
+        setCenter({ kind: 'diff', target: { kind: 'commit', sha, path: openCommitted.path, oldPath: openCommitted.oldPath } }, repo.path)
+      } else if (now?.kind === 'diff' && now.target.kind !== 'working') setCenter({ kind: 'graph' }, repo.path)
     }
   }
 
