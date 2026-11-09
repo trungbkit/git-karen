@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RepoSummary } from '@shared/types'
-import { describeSkipped, mapLimit, pullPlan, validateWorkspaceName } from './workspace'
+import { describeSkipped, mapLimit, pullPlan, validateWorkspaceName, workspaceStats } from './workspace'
 
 const summary = (over: Partial<RepoSummary> = {}): RepoSummary => ({
   branch: 'main',
@@ -57,5 +57,18 @@ describe('validateWorkspaceName', () => {
     expect(validateWorkspaceName('Work ', ws)).toBe('A workspace with this name exists')
     expect(validateWorkspaceName('Work', ws, 'Work')).toBeNull()
     expect(validateWorkspaceName('Home', ws)).toBeNull()
+  })
+})
+
+describe('workspaceStats', () => {
+  it('counts repositories behind, ahead, with changes and needing attention, skipping unknown ones', () => {
+    const stats = workspaceStats(['a', 'b', 'c', 'd', 'e'], {
+      a: summary({ behind: 2 }),
+      b: summary({ behind: 0, ahead: 1, changes: 3 }),
+      c: summary({ behind: 0, upstream: undefined, ahead: 4 }),
+      d: summary({ behind: 0, conflicted: 1, changes: 1 }),
+      e: undefined
+    })
+    expect(stats).toEqual({ known: 4, behind: 1, ahead: 1, dirty: 2, attention: 1 })
   })
 })

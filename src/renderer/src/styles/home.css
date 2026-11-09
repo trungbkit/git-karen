@@ -1,0 +1,44 @@
+/* Shared by the full-page views (Welcome, Workspace): soft accent background, hero header, section headings,
+   repository avatars, icon tiles, rounded lists and empty states. */
+.home-page {
+  flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center;
+  background:
+    radial-gradient(900px 420px at 12% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(700px 380px at 100% 0%, color-mix(in srgb, var(--lane-2) 9%, transparent), transparent 70%),
+    var(--bg-panel);
+}
+.home-inner { width: 1040px; max-width: calc(100% - 48px); padding: clamp(28px, 7vh, 72px) 0 48px; }
+.home-inner .grow { flex: 1; }
+
+.home-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+.home-logo { margin: -6px -2px -6px -6px; filter: drop-shadow(0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent)); }
+.home-hero-text { min-width: 0; }
+.home-eyebrow { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 2px; }
+.home-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-hero-btn { width: 32px; height: 32px; border-radius: 8px; color: var(--text-secondary); }
+.home-hero-btn:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
+
+.home-heading { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-secondary); margin: 0 0 10px; }
+.home-count { font-size: 11px; font-weight: 600; color: var(--text-secondary); padding: 0 7px; line-height: 18px; border-radius: 9px; background: var(--bg-panel-3); }
+
+.icon-tile {
+  flex: none; width: 36px; height: 36px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.icon-tile.xl { width: 52px; height: 52px; border-radius: 14px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 8px 22px -8px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+.repo-avatar {
+  --hue: var(--accent);
+  flex: none; width: 32px; height: 32px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.02em; user-select: none;
+  color: color-mix(in srgb, var(--hue) 72%, var(--text)); background: color-mix(in srgb, var(--hue) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hue) 28%, transparent);
+}
+.repo-avatar.lg { width: 38px; height: 38px; border-radius: 11px; font-size: 14px; }
+.repo-avatar.muted { color: var(--text-secondary); background: var(--bg-panel-3); box-shadow: inset 0 0 0 1px var(--border); }
+
+.home-list { display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--bg-panel-2) 70%, transparent); }
+
+.home-empty { padding: 18px; text-align: center; font-size: 12px; color: var(--text-secondary); border: 1px dashed var(--border-strong); border-radius: 12px; }
+.home-empty-big { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 18px; }

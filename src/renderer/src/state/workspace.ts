@@ -64,3 +64,31 @@ export function validateWorkspaceName(name: string, workspaces: Workspace[], cur
   if (n !== current && workspaces.some((w) => w.name === n)) return 'A workspace with this name exists'
   return null
 }
+
+export interface WorkspaceStats {
+  /** Repositories whose status is known */
+  known: number
+  /** Behind their upstream */
+  behind: number
+  /** Ahead of their upstream */
+  ahead: number
+  /** With uncommitted changes */
+  dirty: number
+  /** With conflicted files or an operation (merge, rebase…) in progress */
+  attention: number
+}
+
+/** Counts for the workspace header, over the repositories whose status is known. */
+export function workspaceStats(repos: string[], summaries: Record<string, RepoSummary | undefined>): WorkspaceStats {
+  const stats: WorkspaceStats = { known: 0, behind: 0, ahead: 0, dirty: 0, attention: 0 }
+  for (const path of repos) {
+    const s = summaries[path]
+    if (!s) continue
+    stats.known++
+    if (s.upstream && s.behind > 0) stats.behind++
+    if (s.upstream && s.ahead > 0) stats.ahead++
+    if (s.changes > 0) stats.dirty++
+    if (s.conflicted > 0 || s.operation) stats.attention++
+  }
+  return stats
+}

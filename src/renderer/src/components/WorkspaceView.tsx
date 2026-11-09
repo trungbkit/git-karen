@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import type { RepoSummary, Workspace } from '@shared/types'
 import { useStore } from '../state/store'
-import { describeSkipped, mapLimit, pullPlan, validateWorkspaceName } from '../state/workspace'
-import { Icon } from '../ui/Icon'
+import { describeSkipped, mapLimit, pullPlan, validateWorkspaceName, workspaceStats } from '../state/workspace'
+import { Icon, type IconName } from '../ui/Icon'
+import { RepoAvatar } from '../ui/RepoAvatar'
 import { showContextMenu } from '../ui/ContextMenu'
 import { confirm, prompt } from '../ui/dialogs'
 import { basename } from '../util/format'
 import { describeGitError } from '../util/gitErrors'
+import { shortPath } from '../util/welcome'
 import '../styles/detail.css'
+import '../styles/home.css'
 import '../styles/workspace.css'
 
 /** Repositories fetched or pulled at the same time */
@@ -234,13 +237,20 @@ export function WorkspaceView() {
 
   if (!workspace) {
     return (
-      <div className="view workspace">
-        <div className="view-message ws-empty">
-          <Icon name="layers" size={28} />
-          <div className="title">Workspaces</div>
-          <div>Group repositories you work on together: see their branches and changes at a glance, fetch or pull them all at once.</div>
-          <button className="btn primary" onClick={() => void createWorkspace()}>
-            New workspace…
+      <div className="workspace home-page">
+        <div className="home-inner ws-intro">
+          <span className="icon-tile xl">
+            <Icon name="layers" size={24} />
+          </span>
+          <h1 className="home-title">Workspaces</h1>
+          <p className="ws-intro-text">Group repositories you work on together: see their branches and changes at a glance, fetch or pull them all at once.</p>
+          <div className="ws-intro-points">
+            <span><Icon name="branch" size={13} /> Branch and ahead/behind of each repository</span>
+            <span><Icon name="fetch" size={13} /> Fetch every repository in one click</span>
+            <span><Icon name="pull" size={13} /> Fast-forward the clean ones that are behind</span>
+          </div>
+          <button className="btn primary ws-intro-btn" onClick={() => void createWorkspace()}>
+            <Icon name="plus" size={13} /> New workspace…
           </button>
         </div>
       </div>
@@ -248,91 +258,179 @@ export function WorkspaceView() {
   }
 
   const busy = bulk !== null
+  const stats = workspaceStats(repos, Object.fromEntries(repos.map((p) => [p, rows[p]?.summary])))
+  const loading = repos.length > 0 && stats.known < repos.length && repos.some((p) => !rows[p]?.summary && !rows[p]?.error)
   return (
-    <div className="view workspace">
-      <div className="view-head">
-        <Icon name="layers" size={14} />
-        <button className="btn ghost ws-switch" title="Switch, create or rename workspaces" onClick={workspaceMenu}>
-          <span className="title">{workspace.name}</span>
-          <Icon name="chevron-down" size={11} />
-        </button>
-        <span className="muted" style={{ fontSize: 12 }}>
-          {repos.length} repositor{repos.length === 1 ? 'y' : 'ies'}
-        </span>
-        <span className="grow" />
-        <button className="btn small" onClick={() => void addRepository()}>
-          <Icon name="plus" size={12} /> Add repository…
-        </button>
-        <button className="btn small" title="Add every repository open in a tab" onClick={addOpenTabs}>
-          Add open tabs
-        </button>
-        <button className="btn small" disabled={busy || !repos.length} onClick={() => void fetchAll()}>
-          <Icon name="fetch" size={12} /> {bulk === 'Fetching' ? 'Fetching…' : 'Fetch all'}
-        </button>
-        <button className="btn small" disabled={busy || !repos.length} title="Fast-forward every clean repository that is behind its upstream" onClick={() => void pullAll()}>
-          <Icon name="pull" size={12} /> {bulk === 'Pulling' ? 'Pulling…' : 'Pull all'}
-        </button>
-        <button className="icon-btn" title="Refresh status" aria-label="Refresh status" onClick={pollAll}>
-          <Icon name="refresh" size={13} />
-        </button>
-      </div>
-      <div className="view-body">
-        {repos.length === 0 && (
-          <div className="view-message">
-            This workspace is empty. Add repositories with the buttons above.
+    <div className="workspace home-page">
+      <div className="home-inner">
+        <header className="home-hero">
+          <span className="icon-tile xl">
+            <Icon name="layers" size={24} />
+          </span>
+          <div className="home-hero-text">
+            <div className="home-eyebrow">Workspace</div>
+            <h1 className="home-title" title={workspace.name}>
+              {workspace.name}
+            </h1>
           </div>
-        )}
-        {repos.length > 0 && (
-          <div className="ws-table">
-            <div className="ws-row ws-head">
-              <span>Repository</span>
-              <span>Branch</span>
-              <span className="ws-num">Ahead / behind</span>
-              <span className="ws-num">Changes</span>
-              <span />
+          <span className="grow" />
+          <button className="icon-btn home-hero-btn" title="Refresh status" aria-label="Refresh status" onClick={pollAll}>
+            <Icon name="refresh" size={16} />
+          </button>
+          <button className="icon-btn home-hero-btn" title="Switch, create, rename or delete workspaces" aria-label="Workspace options" onClick={workspaceMenu}>
+            <Icon name="dots" size={16} />
+          </button>
+        </header>
+
+        <div className="ws-switcher" role="tablist" aria-label="Workspaces">
+          {workspaces.map((w) => (
+            <button
+              key={w.name}
+              role="tab"
+              aria-selected={w === workspace}
+              className={`ws-chip ${w === workspace ? 'on' : ''}`}
+              onClick={() => select(w.name)}
+              onContextMenu={(e) => {
+                select(w.name)
+                workspaceMenu(e)
+              }}
+            >
+              <span className="ellipsis">{w.name}</span>
+              <span className="ws-chip-count">{w.repos.length}</span>
+            </button>
+          ))}
+          <button className="ws-chip ws-chip-new" onClick={() => void createWorkspace()} title="New workspace">
+            <Icon name="plus" size={12} /> New
+          </button>
+        </div>
+
+        <div className="ws-stats">
+          <Stat icon="layers" label="Repositories" value={repos.length} />
+          <Stat icon="arrow-down" label="Behind upstream" value={stats.behind} tone={stats.behind ? 'warning' : undefined} />
+          <Stat icon="arrow-up" label="Ahead of upstream" value={stats.ahead} tone={stats.ahead ? 'accent' : undefined} />
+          <Stat
+            icon={stats.attention ? 'warning' : 'edit'}
+            label={stats.attention ? `With changes · ${stats.attention} need${stats.attention === 1 ? 's' : ''} attention` : 'With changes'}
+            value={stats.dirty}
+            tone={stats.attention ? 'danger' : stats.dirty ? 'warning' : undefined}
+          />
+        </div>
+
+        <div className="ws-toolbar">
+          <h2 className="home-heading">Repositories</h2>
+          {loading && <span className="spinner small" aria-label="Loading status" />}
+          <span className="grow" />
+          <button className="btn ghost small" onClick={() => void addRepository()}>
+            <Icon name="plus" size={12} /> Add repository…
+          </button>
+          <button className="btn ghost small" title="Add every repository open in a tab" onClick={addOpenTabs}>
+            <Icon name="list" size={12} /> Add open tabs
+          </button>
+          <button className="btn small" disabled={busy || !repos.length} onClick={() => void fetchAll()}>
+            <Icon name="fetch" size={12} /> {bulk === 'Fetching' ? 'Fetching…' : 'Fetch all'}
+          </button>
+          <button
+            className="btn primary small"
+            disabled={busy || !repos.length}
+            title="Fast-forward every clean repository that is behind its upstream"
+            onClick={() => void pullAll()}
+          >
+            <Icon name="pull" size={12} /> {bulk === 'Pulling' ? 'Pulling…' : 'Pull all'}
+          </button>
+        </div>
+
+        {repos.length === 0 ? (
+          <div className="home-empty home-empty-big">
+            <span className="icon-tile">
+              <Icon name="folder" size={18} />
+            </span>
+            <div>This workspace is empty.</div>
+            <div className="ws-empty-actions">
+              <button className="btn small" onClick={() => void addRepository()}>
+                <Icon name="plus" size={12} /> Add repository…
+              </button>
+              <button className="btn small" onClick={addOpenTabs}>
+                Add open tabs
+              </button>
             </div>
+          </div>
+        ) : (
+          <div className="home-list">
             {repos.map((path) => {
               const row = rows[path] ?? {}
               const s = row.summary
+              const name = basename(path)
               return (
                 <div key={path} className="ws-row" onDoubleClick={() => void openRepo(path).catch(() => undefined)} onContextMenu={(e) => rowMenu(e, path)}>
+                  <RepoAvatar name={name} path={path} />
                   <span className="ws-repo" title={path}>
-                    <span className="ellipsis ws-name">{basename(path)}</span>
-                    <span className="ellipsis muted ws-path">{path}</span>
+                    <span className="ellipsis ws-name">{name}</span>
+                    <span className="ellipsis ws-path">{shortPath(path)}</span>
                   </span>
-                  <span className="ellipsis ws-branch" title={s?.upstream ? `Tracking ${s.upstream}` : undefined}>
-                    {s && <Icon name="branch" size={11} />}
-                    {s ? (s.detached ? `detached at ${s.headSha?.slice(0, 7) ?? '?'}` : s.branch) : ''}
-                    {s?.operation && <span className="ws-op">{s.operation}</span>}
-                  </span>
-                  <span className="ws-num mono">
-                    {s?.upstream ? (
-                      <>
-                        <span className={s.ahead ? 'ws-ahead' : 'muted'}>↑{s.ahead}</span> <span className={s.behind ? 'ws-behind' : 'muted'}>↓{s.behind}</span>
-                      </>
-                    ) : (
-                      s && <span className="muted">no upstream</span>
-                    )}
-                  </span>
-                  <span className={`ws-num ${s?.changes ? 'ws-dirty' : 'muted'}`}>
-                    {s ? (s.conflicted ? `${s.changes} (${s.conflicted} conflicted)` : s.changes || 'clean') : ''}
+                  <span className="ws-cells">
+                    <span className="ws-cell">
+                      {!s && row.error && (
+                        <span className="ws-pill danger" title={row.error}>
+                          <Icon name="warning" size={11} /> status unavailable
+                        </span>
+                      )}
+                      {s && (
+                        <span className="ws-pill ws-branch" title={s.upstream ? `Tracking ${s.upstream}` : 'No upstream branch'}>
+                          <Icon name="branch" size={11} />
+                          <span className="ellipsis">{s.detached ? `detached at ${s.headSha?.slice(0, 7) ?? '?'}` : s.branch}</span>
+                        </span>
+                      )}
+                      {s?.operation && <span className="ws-pill danger">{s.operation}</span>}
+                    </span>
+                    <span className="ws-cell">
+                      {s?.upstream ? (
+                        s.ahead || s.behind ? (
+                          <span className="ws-pill mono" title={`${s.ahead} ahead, ${s.behind} behind ${s.upstream}`}>
+                            <span className={s.ahead ? 'ws-ahead' : 'ws-zero'}>↑{s.ahead}</span>
+                            <span className={s.behind ? 'ws-behind' : 'ws-zero'}>↓{s.behind}</span>
+                          </span>
+                        ) : (
+                          <span className="ws-pill subtle" title={`Up to date with ${s.upstream}`}>
+                            <Icon name="check" size={11} /> synced
+                          </span>
+                        )
+                      ) : (
+                        s && <span className="ws-pill subtle">no upstream</span>
+                      )}
+                    </span>
+                    <span className="ws-cell">
+                      {s &&
+                        (s.conflicted ? (
+                          <span className="ws-pill danger">
+                            <Icon name="warning" size={11} /> {s.conflicted} conflicted
+                          </span>
+                        ) : s.changes ? (
+                          <span className="ws-pill warning">
+                            <Icon name="edit" size={11} /> {s.changes} change{s.changes === 1 ? '' : 's'}
+                          </span>
+                        ) : (
+                          <span className="ws-pill success">
+                            <Icon name="check" size={11} /> clean
+                          </span>
+                        ))}
+                    </span>
                   </span>
                   <span className="ws-actions">
                     {row.busy && (
-                      <span className="muted ws-busy">
+                      <span className="ws-busy">
                         <span className="spinner small" /> {row.busy}…
                       </span>
                     )}
-                    {!row.busy && (row.error || row.failed) && (
-                      <span className="ws-error" title={row.error ?? row.failed}>
-                        <Icon name="warning" size={12} />
+                    {!row.busy && row.failed && (
+                      <span className="ws-error" title={row.failed}>
+                        <Icon name="warning" size={13} />
                       </span>
                     )}
                     {!row.summary && !row.error && !row.busy && <span className="spinner small" />}
-                    <button className="btn small" onClick={() => void openRepo(path).catch(() => undefined)}>
+                    <button className="btn small ws-open" onClick={() => void openRepo(path).catch(() => undefined)}>
                       Open
                     </button>
-                    <button className="icon-btn" title="More" aria-label="More" onClick={(e) => rowMenu(e, path)}>
+                    <button className="icon-btn" title="More" aria-label={`More actions for ${name}`} onClick={(e) => rowMenu(e, path)}>
                       <Icon name="dots" size={13} />
                     </button>
                   </span>
@@ -341,6 +439,20 @@ export function WorkspaceView() {
             })}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function Stat({ icon, label, value, tone }: { icon: IconName; label: string; value: number; tone?: 'accent' | 'warning' | 'danger' }) {
+  return (
+    <div className={`ws-stat ${tone ?? ''}`}>
+      <span className="ws-stat-icon">
+        <Icon name={icon} size={15} />
+      </span>
+      <div className="ws-stat-text">
+        <div className="ws-stat-value">{value}</div>
+        <div className="ws-stat-label">{label}</div>
       </div>
     </div>
   )

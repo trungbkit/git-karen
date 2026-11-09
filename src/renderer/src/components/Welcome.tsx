@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DiscoveredRepo, RecentRepo } from '@shared/types'
 import { COMMANDS } from '@shared/commands'
 import { useStore } from '../state/store'
@@ -6,10 +6,12 @@ import { Icon, type IconName } from '../ui/Icon'
 import { showContextMenu } from '../ui/ContextMenu'
 import { dispatch, openRepoDialog, shortcutFor } from '../keybindings'
 import { relativeTime } from '../util/format'
-import { greeting, repoHue, repoInitials, shortPath, welcomeLists } from '../util/welcome'
+import { greeting, shortPath, welcomeLists } from '../util/welcome'
+import { RepoAvatar } from '../ui/RepoAvatar'
 import { useRovingFocus } from '../ui/roving'
 import appIcon from '../assets/icon.png'
 import '../styles/shell.css'
+import '../styles/home.css'
 
 // The last scan, kept while the app runs so switching back to a new tab does not scan again.
 let lastScan: { dirs: string; repos: DiscoveredRepo[] } | null = null
@@ -174,19 +176,19 @@ export function Welcome() {
   )
 
   return (
-    <div className="welcome">
-      <div className="wl-inner">
-        <header className="wl-hero">
-          <img className="wl-logo" src={appIcon} width={52} height={52} alt="" />
-          <div className="wl-hero-text">
-            <div className="wl-eyebrow">Karen · local-first Git client</div>
-            <h1 className="wl-title">{greeting(new Date().getHours())}</h1>
+    <div className="welcome home-page">
+      <div className="home-inner">
+        <header className="home-hero">
+          <img className="home-logo" src={appIcon} width={52} height={52} alt="" />
+          <div className="home-hero-text">
+            <div className="home-eyebrow">Karen · local-first Git client</div>
+            <h1 className="home-title">{greeting(new Date().getHours())}</h1>
           </div>
           <span className="grow" />
-          <button className="icon-btn wl-hero-btn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" onClick={() => dispatch(COMMANDS.toggleKeyBindings)}>
+          <button className="icon-btn home-hero-btn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" onClick={() => dispatch(COMMANDS.toggleKeyBindings)}>
             <Icon name="list" size={16} />
           </button>
-          <button className="icon-btn wl-hero-btn" title="Preferences" aria-label="Preferences" onClick={() => setModal({ kind: 'preferences', section: 'general' })}>
+          <button className="icon-btn home-hero-btn" title="Preferences" aria-label="Preferences" onClick={() => setModal({ kind: 'preferences', section: 'general' })}>
             <Icon name="settings" size={16} />
           </button>
         </header>
@@ -195,16 +197,16 @@ export function Welcome() {
 
         <div className="wl-grid">
           <aside className="wl-side">
-            <h2 className="wl-heading">Start</h2>
+            <h2 className="home-heading">Start</h2>
             <div className="wl-actions">
               <Action icon="folder" title="Open repository" text="Browse to a local repository" keys={shortcutFor(COMMANDS.openRepo)} onClick={() => void openRepoDialog()} />
               <Action icon="fetch" title="Clone" text="Copy a remote repository from a URL" keys={shortcutFor(COMMANDS.cloneRepo)} onClick={() => setModal({ kind: 'clone' })} />
               <Action icon="plus" title="New repository" text="Initialize an empty local repository" keys={shortcutFor(COMMANDS.initRepo)} onClick={() => setModal({ kind: 'init' })} />
             </div>
 
-            <h2 className="wl-heading">Workspaces</h2>
+            <h2 className="home-heading">Workspaces</h2>
             <button className="wl-card wl-workspaces" onClick={openWorkspaceTab} title="Branches, changes and ahead/behind of several repositories; fetch or pull them all">
-              <span className="wl-icon-tile">
+              <span className="icon-tile">
                 <Icon name="layers" size={18} />
               </span>
               <span className="wl-card-text">
@@ -271,12 +273,12 @@ export function Welcome() {
             <section className="wl-section">
               <SectionHead title="Recent" count={lists.recent.length || undefined} />
               {lists.recent.length > 0 ? (
-                <div className="wl-list">{lists.recent.map(recentRow)}</div>
+                <div className="home-list">{lists.recent.map(recentRow)}</div>
               ) : query ? (
-                <div className="wl-empty">No recent repository matches.</div>
+                <div className="home-empty">No recent repository matches.</div>
               ) : (
-                <div className="wl-empty wl-empty-big">
-                  <span className="wl-icon-tile">
+                <div className="home-empty home-empty-big">
+                  <span className="icon-tile">
                     <Icon name="history" size={18} />
                   </span>
                   <div>Repositories you open will show up here.</div>
@@ -295,7 +297,7 @@ export function Welcome() {
                 </button>
               </SectionHead>
               {lists.discovered.length > 0 ? (
-                <div className="wl-list">
+                <div className="home-list">
                   {lists.discovered.map(foundRow)}
                   {lists.hidden > 0 && (
                     <div className="wl-repo wl-more" role="button" onClick={() => setShowAll(true)}>
@@ -305,7 +307,7 @@ export function Welcome() {
                   )}
                 </div>
               ) : (
-                <div className="wl-empty">
+                <div className="home-empty">
                   {discovery.repos === null
                     ? 'Looking for repositories…'
                     : scanDirs.length === 0
@@ -326,31 +328,18 @@ export function Welcome() {
 function SectionHead({ title, count, children }: { title: string; count?: number; children?: ReactNode }) {
   return (
     <div className="wl-section-head">
-      <h2 className="wl-heading">{title}</h2>
-      {count !== undefined && <span className="wl-count">{count}</span>}
+      <h2 className="home-heading">{title}</h2>
+      {count !== undefined && <span className="home-count">{count}</span>}
       <span className="grow" />
       {children}
     </div>
   )
 }
 
-/** Monogram in a colour picked from the repository path (one of the graph lane colours). */
-function RepoAvatar({ name, path, size, muted }: { name: string; path: string; size?: 'lg'; muted?: boolean }) {
-  return (
-    <span
-      className={`wl-avatar ${size === 'lg' ? 'lg' : ''} ${muted ? 'muted' : ''}`}
-      style={{ '--hue': `var(--lane-${repoHue(path)})` } as CSSProperties}
-      aria-hidden
-    >
-      {repoInitials(name)}
-    </span>
-  )
-}
-
 function Action({ icon, title, text, keys, onClick }: { icon: IconName; title: string; text: string; keys?: string; onClick(): void }) {
   return (
     <button className="wl-card wl-action" onClick={onClick}>
-      <span className="wl-icon-tile">
+      <span className="icon-tile">
         <Icon name={icon} size={18} />
       </span>
       <span className="wl-card-text">
