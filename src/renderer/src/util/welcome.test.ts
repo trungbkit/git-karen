@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DiscoveredRepo, RecentRepo } from '@shared/types'
-import { DISCOVERED_SHOWN, matchesRepo, welcomeLists } from './welcome'
+import { DISCOVERED_SHOWN, greeting, matchesRepo, repoHue, repoInitials, shortPath, welcomeLists } from './welcome'
 
 const recent = (name: string, lastOpened: number, favorite = false): RecentRepo => ({ path: `/code/${name}`, name, lastOpened, favorite })
 const found = (name: string, dir = '/code'): DiscoveredRepo => ({ path: `${dir}/${name}`, name, modified: 0 })
@@ -39,5 +39,35 @@ describe('matchesRepo', () => {
     expect(matchesRepo('personal', { name: 'git-client', path: '/Users/me/Personal/git-client' })).toBe(true)
     expect(matchesRepo('zzz', { name: 'git-client', path: '/x' })).toBe(false)
     expect(matchesRepo('  ', { name: 'a', path: '/a' })).toBe(true)
+  })
+})
+
+describe('repository avatars and paths', () => {
+  it('takes the initials of the first two words', () => {
+    expect(repoInitials('git-kraken-craft')).toBe('GK')
+    expect(repoInitials('karen')).toBe('K')
+    expect(repoInitials('my_app.web')).toBe('MA')
+    expect(repoInitials('.dotfiles')).toBe('D')
+    expect(repoInitials('---')).toBe('#')
+  })
+
+  it('gives a path the same lane colour every time', () => {
+    expect(repoHue('/code/api')).toBe(repoHue('/code/api'))
+    expect(repoHue('/code/api')).toBeGreaterThanOrEqual(0)
+    expect(repoHue('/code/api')).toBeLessThan(10)
+  })
+
+  it('writes the home folder as ~', () => {
+    expect(shortPath('/Users/ann/code/api')).toBe('~/code/api')
+    expect(shortPath('/home/ann')).toBe('~')
+    expect(shortPath('C:\\Users\\ann\\code')).toBe('~\\code')
+    expect(shortPath('/opt/Users/ann')).toBe('/opt/Users/ann')
+  })
+
+  it('greets by the time of day', () => {
+    expect(greeting(3)).toBe('Working late')
+    expect(greeting(9)).toBe('Good morning')
+    expect(greeting(14)).toBe('Good afternoon')
+    expect(greeting(20)).toBe('Good evening')
   })
 })

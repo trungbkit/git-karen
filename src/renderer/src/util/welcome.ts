@@ -47,3 +47,28 @@ export function welcomeLists(recent: RecentRepo[], discovered: DiscoveredRepo[],
     hidden: Math.max(0, fresh.length - cap)
   }
 }
+
+/** One or two letters for a repository's avatar: the initials of its first two words ("git-kraken" → "GK"). */
+export function repoInitials(name: string): string {
+  const words = name.split(/[\s._-]+/).filter((w) => /[\p{L}\p{N}]/u.test(w))
+  if (words.length === 0) return '#'
+  const first = (w: string) => [...w.replace(/^[^\p{L}\p{N}]+/u, '')][0] ?? ''
+  return (first(words[0]) + (words[1] ? first(words[1]) : '')).toUpperCase()
+}
+
+/** A stable graph lane colour (0–9) for a repository, so its avatar keeps the same colour. */
+export function repoHue(path: string): number {
+  let h = 0
+  for (let i = 0; i < path.length; i++) h = (h * 31 + path.charCodeAt(i)) >>> 0
+  return h % 10
+}
+
+/** The path with the home folder written as "~" (display only). */
+export function shortPath(path: string): string {
+  return path.replace(/^(\/Users\/[^/]+|\/home\/[^/]+)(?=\/|$)/, '~').replace(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/, '~')
+}
+
+/** Greeting for the welcome screen by the hour of the day. */
+export function greeting(hour: number): string {
+  return hour < 5 ? 'Working late' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+}
