@@ -562,6 +562,20 @@ fn timeout_for(timeout_seconds: u32, max_tokens: u32) -> u32 {
     timeout_seconds.max(max_tokens / 40)
 }
 
+/// Keep Claude from thinking (or thinking much), since thinking can spend the whole budget before any text is
+/// written and these tasks don't need it. Newer models reject `{"type":"disabled"}`: Sonnet 5.5 turns thinking
+/// off with `between_tools`, while Opus 5.5 and Fable/Mythos always think, so those get the lowest effort instead.
+fn apply_thinking_off(body: &mut Value, model: &str) {
+    let m = model.to_ascii_lowercase();
+    if m.contains("sonnet-5-5") {
+        body["thinking"] = json!({ "type": "between_tools" });
+    } else if m.contains("opus-5-5") || m.contains("fable") || m.contains("mythos") {
+        body["output_config"] = json!({ "effort": "low" });
+    } else {
+        body["thinking"] = json!({ "type": "disabled" });
+    }
+}
+
 /// Send one prompt to the resolved provider and return the text of the reply.
 pub async fn complete(r: &Resolved, prompt: &str, max_tokens: Option<u32>) -> Result<String, String> {
     let max_tokens = max_tokens.unwrap_or(DEFAULT_MAX_TOKENS).clamp(16, 8192);
@@ -574,10 +588,9 @@ pub async fn complete(r: &Resolved, prompt: &str, max_tokens: Option<u32>) -> Re
             let mut body = json!({
                 "model": r.model,
                 "max_tokens": max_tokens,
-                // thinking can spend the whole budget before any text is written; these tasks don't need it
-                "thinking": { "type": "disabled" },
                 "messages": [{ "role": "user", "content": prompt }],
             });
+            apply_thinking_off(&mut body, &r.model);
             let mut headers = vec![("Content-Type", "application/json".to_string()), ("anthropic-version", "2023-06-01".to_string())];
             if oauth {
                 // subscription OAuth tokens are scoped to Claude Code; without this system prompt the API rejects them
@@ -716,6 +729,24 @@ mod tests {
         let e = parse_response("{\"error\":{\"message\":\"bad key\"}}\n401", "").unwrap_err();
         assert!(!e.retryable);
         assert!(parse_response("<html>\n200", "").is_err());
+    }
+
+    #[test]
+    fn thinking_off_per_model() {
+        let body = |m: &str| {
+            let mut b = json!({});
+            apply_thinking_off(&mut b, m);
+            b
+        };
+        assert_eq!(body("claude-sonnet-5-5")["thinking"]["type"], "between_tools");
+        for m in ["claude-opus-5-5", "claude-fable-5-1", "claude-mythos-5-1"] {
+            let b = body(m);
+            assert!(b.get("thinking").is_none(), "{m}");
+            assert_eq!(b["output_config"]["effort"], "low");
+        }
+        for m in ["claude-haiku-5-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8"] {
+            assert_eq!(body(m)["thinking"]["type"], "disabled", "{m}");
+        }
     }
 
     #[test]
