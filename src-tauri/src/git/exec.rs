@@ -91,6 +91,10 @@ pub struct RawOutput {
 /// Like `git`, with stdout as raw bytes (blob contents such as images).
 pub async fn git_bytes(cwd: &Path, args: &[String], opts: Opts) -> Result<RawOutput, String> {
     let mut cmd = Command::new(git_bin());
+    if !opts.read_only {
+        // hooks see the PATH a terminal would give them; set first so the variables below still win
+        cmd.envs(crate::shell_env::hook_env().await);
+    }
     cmd.args(args)
         .current_dir(cwd)
         .env("LC_ALL", "C")

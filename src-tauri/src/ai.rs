@@ -3,7 +3,7 @@
 // one comes from. Anything not set in the app falls back to the environment, including the login shell's, since a GUI
 // app doesn't inherit what ~/.zshrc exports. Requests go through the system curl, which brings proxy support
 // (HTTPS_PROXY, NO_PROXY) with it.
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use tokio::sync::OnceCell;
+
+use crate::shell_env;
 
 pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-haiku-5-5";
 pub const DEFAULT_OPENAI_MODEL: &str = "gpt-6-luna";
@@ -107,50 +108,13 @@ pub struct AiStatus {
 
 // ------------------------------------------------------------- environment
 
-static SHELL_ENV: OnceCell<HashMap<String, String>> = OnceCell::const_new();
-
-/// The environment an interactive login shell ends up with, read once. Empty when it can't be read in time.
-#[cfg(not(test))]
-async fn shell_env() -> &'static HashMap<String, String> {
-    SHELL_ENV.get_or_init(read_shell_env).await
-}
-
-#[cfg(test)]
-async fn shell_env() -> &'static HashMap<String, String> {
-    SHELL_ENV.get_or_init(|| async { HashMap::new() }).await
-}
-
-#[cfg(all(windows, not(test)))]
-async fn read_shell_env() -> HashMap<String, String> {
-    HashMap::new()
-}
-
-#[cfg(all(not(windows), not(test)))]
-async fn read_shell_env() -> HashMap<String, String> {
-    const MARK: &str = "__KAREN_ENV__";
-    let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/sh".into());
-    // rc files may print banners; everything before the marker is ignored
-    let script = format!("printf '%s' {MARK}; env -0");
-    let child = Command::new(shell)
-        .args(["-l", "-i", "-c", &script])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .output();
-    let Ok(Ok(out)) = tokio::time::timeout(Duration::from_secs(5), child).await else { return HashMap::new() };
-    let text = String::from_utf8_lossy(&out.stdout);
-    let Some((_, vars)) = text.split_once(MARK) else { return HashMap::new() };
-    vars.split('\0').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.to_string(), v.to_string())).collect()
-}
-
 /// A non-empty environment variable from this process, or else from the login shell.
 #[cfg(not(test))]
 async fn env_value(name: &str) -> Option<String> {
     if let Some(v) = std::env::var(name).ok().filter(|v| !v.trim().is_empty()) {
         return Some(v.trim().to_string());
     }
-    shell_env().await.get(name).map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    shell_env::shell_env().await.get(name).map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
 /// Tests must not depend on the developer's keys or shell.
@@ -161,20 +125,7 @@ async fn env_value(_name: &str) -> Option<String> {
 
 /// Proxy variables exported only by the login shell, for other curl-based clients (hosting integrations).
 pub(crate) async fn proxy_env() -> Vec<(String, String)> {
-    shell_vars(&PROXY_VARS).await
-}
-
-/// The given variables as the login shell exports them, for those this process doesn't have.
-pub(crate) async fn shell_vars(names: &[&str]) -> Vec<(String, String)> {
-    let mut env = vec![];
-    for var in names {
-        if std::env::var_os(var).is_none() {
-            if let Some(v) = shell_env().await.get(*var) {
-                env.push((var.to_string(), v.clone()));
-            }
-        }
-    }
-    env
+    shell_env::shell_vars(&PROXY_VARS).await
 }
 
 // ------------------------------------------------------------------- store

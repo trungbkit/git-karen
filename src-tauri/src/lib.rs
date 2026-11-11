@@ -7,6 +7,7 @@ mod git;
 mod integrations;
 mod launch;
 mod menu;
+mod shell_env;
 mod terminal;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
@@ -307,6 +308,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // read the login shell's environment now, so the first commit or push doesn't wait for it
+            tauri::async_runtime::spawn(shell_env::shell_env());
             let handle = app.handle().clone();
             app.manage(Backend {
                 git: Arc::new(GitService::new(Arc::new(EmitHooks(handle.clone())))),

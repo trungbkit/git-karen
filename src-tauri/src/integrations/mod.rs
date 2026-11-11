@@ -474,7 +474,7 @@ impl Integrations {
         self.gh_env
             .get_or_init(|| async {
                 let mut env = crate::ai::proxy_env().await;
-                env.extend(crate::ai::shell_vars(&gh::GH_VARS).await);
+                env.extend(crate::shell_env::shell_vars(&gh::GH_VARS).await);
                 env
             })
             .await
