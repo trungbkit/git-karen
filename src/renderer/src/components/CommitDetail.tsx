@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CommitDetail as CommitDetailData, Stash } from '@shared/types'
 import { useStore, type RepoTab } from '../state/store'
 import { Icon } from '../ui/Icon'
@@ -7,6 +7,7 @@ import { avatarColor, formatDate, fullDate, initials, shortSha } from '../util/f
 import { commitMenuItems, copyText, dropStash, popStash } from '../actions/refActions'
 import { FileList, FileStats, FileViewToggle, fileMenuItems } from './FileList'
 import { Avatar as GraphAvatar } from '../graph/avatar'
+import { AvatarHostProvider, useAuthorAvatars } from '../graph/authorAvatars'
 import { SignatureBadge } from './SignatureBadge'
 import { IssueText } from './IssueText'
 import { CiBadge } from '../graph/CiBadge'
@@ -59,6 +60,9 @@ export function CommitDetail({ repo, sha, stash }: { repo: RepoTab; sha: string;
   const dateMode = useStore((s) => s.prefs.dateFormat)
   const showAvatars = useStore((s) => s.prefs.showAvatars)
   const { setCenter, select, run } = useStore.getState()
+  const people = useMemo(() => (detail ? [detail.commit] : []), [detail])
+  // same GitHub host scope as the graph, so the detail shows the same avatar as the graph node
+  const avatarHost = useAuthorAvatars(repo.path, people, showAvatars)
 
   if (error) return <div className="rp-empty">{error}</div>
   if (!detail) return <div className="rp-empty">Loading…</div>
@@ -73,7 +77,9 @@ export function CommitDetail({ repo, sha, stash }: { repo: RepoTab; sha: string;
 
   const person = (who: 'authored' | 'committed', sig: typeof commit.author, size: number) => (
     <div className="cd-person">
-      <GraphAvatar name={sig.name} email={sig.email} size={size} remote={showAvatars} />
+      <AvatarHostProvider value={avatarHost}>
+        <GraphAvatar name={sig.name} email={sig.email} size={size} remote={showAvatars} />
+      </AvatarHostProvider>
       <div className="cd-person-text">
         <span className="cd-person-name ellipsis" title={`${sig.name} <${sig.email}>`}>
           {sig.name}
