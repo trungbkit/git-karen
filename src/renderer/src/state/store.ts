@@ -63,6 +63,10 @@ export interface RepoTab {
   error: string | null
   /** Label of the git operation currently running, e.g. "Pushing" */
   busy: string | null
+  /** When `busy` was set (ms since epoch), for the elapsed time */
+  busySince?: number
+  /** The last operation `run` finished, for the toolbar's brief "done" state */
+  lastRun?: { label: string; ok: boolean; at: number; ms: number }
 }
 
 export interface Toast {
@@ -399,18 +403,22 @@ export const useStore = create<StoreState>((set, get) => ({
   async run(label, fn, opts = {}) {
     const repo = opts.repo ?? get().activeTab
     if (!get().repos[repo]) return false
-    get().updateRepo(repo, { busy: label })
+    const since = Date.now()
+    let ok = false
+    get().updateRepo(repo, { busy: label, busySince: since })
     // progress of an earlier operation (or of an auto-fetch) must not show under this label
     clearProgress(repo)
     try {
       await fn(repo)
+      ok = true
       if (opts.success) get().toast({ kind: 'success', title: opts.success })
       return true
     } catch (e) {
       get().toast(errorToast(label, e instanceof Error ? e : new Error(String(e)), repo))
       return false
     } finally {
-      get().updateRepo(repo, { busy: null })
+      const at = Date.now()
+      get().updateRepo(repo, { busy: null, busySince: undefined, lastRun: { label, ok, at, ms: at - since } })
       clearProgress(repo)
       await get().refresh(repo, { log: opts.log ?? true })
     }

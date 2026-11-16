@@ -152,6 +152,9 @@ body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-sel
   .skeleton { animation: none; background: var(--bg-panel-3); }
   .spinner { animation: none; border-top-color: var(--border-strong); border-right-color: var(--accent); }
   .progress-fill.indeterminate { animation: none; left: 0; width: 100%; opacity: 0.45; }
+  .busy-ring { animation: none; border-right-color: var(--accent); }
+  .busy-strip-fill.indeterminate, .tab-busy-line::after { animation: none; left: 0; width: 100%; opacity: 0.45; }
+  .busy-pill.done { animation: none; }
   .g-flash { animation: none; display: none; }
   .toast-timer { animation: none; display: none; }
 }

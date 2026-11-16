@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stablyai/orca/main/docs/schemas/plugins/orca-plugin.v2.schema.json",
+  "manifestVersion": 2,
+  "execution": "trusted-worker",
+  "id": "git-graph",
+  "name": "Git Graph",
+  "version": "0.1.0",
+  "description": "Commit graph of the focused workspace's repository: branches, tags, stashes and uncommitted changes, with commit details.",
+  "license": "MIT",
+  "engines": {
+    "orca": ">=1.4.246"
+  },
+  "pluginApi": 1,
+  "main": "worker/main.mjs",
+  "contributes": {
+    "panels": [
+      {
+        "id": "graph",
+        "title": "Git Graph",
+        "icon": "branch",
+        "entry": "panel/index.html"
+      }
+    ],
+    "settings": [
+      {
+        "key": "avatars",
+        "title": "Author pictures",
+        "description": "Show commit authors' pictures from GitHub and Gravatar. The worker sends a SHA-256 hash of each author's email to Gravatar and, for github.com repositories, commit ids to GitHub's API. Off: initials only.",
+        "type": "boolean",
+        "default": true
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "settings:own"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "orca-git-graph",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Orca plugin: commit graph of the focused workspace's repository.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "validate": "orca plugin validate ."
+  }
+}

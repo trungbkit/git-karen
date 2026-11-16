@@ -29,6 +29,14 @@
 .tab.active { background: var(--bg-toolbar); color: var(--text); border-color: var(--border); }
 .tab .ellipsis { flex: 1; }
 .tab-op { font-size: 10px; text-transform: uppercase; color: var(--warning); }
+.tab { position: relative; }
+.tab.busy:not(.active) { color: var(--text); }
+.tab-spinner { flex: none; }
+.tab-busy-line {
+  position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 1px; overflow: hidden; pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 30%, transparent); animation: busy-in 0.18s ease-out 0.2s both;
+}
+.tab-busy-line::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 35%; background: var(--accent); animation: progress-slide 1.3s ease-in-out infinite; }
 .tab-close { -webkit-app-region: no-drag; border: none; background: transparent; color: inherit; border-radius: 4px; padding: 3px; display: flex; opacity: 0.6; cursor: pointer; }
 .tab-close:hover { opacity: 1; background: var(--bg-hover); }
 .tab-new { -webkit-app-region: no-drag; border: none; background: transparent; color: var(--text-secondary); padding: 6px; margin-bottom: 3px; border-radius: 6px; cursor: pointer; display: flex; }
@@ -73,7 +81,44 @@
 .tb-worktree .icon-btn { min-width: 18px; height: 16px; padding: 1px; }
 .tab-wt { display: inline-flex; color: var(--text-secondary); }
 .tab.active .tab-wt { color: var(--accent); }
-.tb-busy { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; margin-right: 8px; white-space: nowrap; }
+
+/* a running git operation (ui/BusyIndicator.tsx): pill on the right, 2px line along the bottom edge, the button that
+   started it highlighted. Quick operations (staging) end before the delayed fade-in shows anything. */
+.toolbar { position: relative; }
+@keyframes busy-in { from { opacity: 0; } to { opacity: 1; } }
+.busy-ring {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top-color: var(--accent); animation: kc-spin 0.8s linear infinite;
+}
+.busy-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; min-width: 0; max-width: 300px; padding: 0 14px 0 6px; margin-right: 6px;
+  border-radius: 17px; font-size: 12px; color: var(--text); white-space: nowrap;
+  background: color-mix(in srgb, var(--accent) 13%, var(--bg-toolbar)); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: busy-in 0.18s ease-out 0.2s both;
+}
+.busy-pill-icon { position: relative; flex: none; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: var(--accent); }
+.busy-pill-text { display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.2; }
+.busy-pill-label { font-weight: 600; }
+.busy-pill-pct { color: var(--accent); font-variant-numeric: tabular-nums; }
+.busy-pill-sub { font-size: 10.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.busy-pill.done {
+  color: var(--success); background: color-mix(in srgb, var(--success) 13%, var(--bg-toolbar)); border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  animation: busy-done 1.6s ease-out both;
+}
+.busy-pill.done .busy-pill-icon { color: var(--success); }
+@keyframes busy-done { 0% { opacity: 0; transform: scale(0.94); } 10% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; } }
+.busy-strip {
+  position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; pointer-events: none; z-index: 2;
+  background: color-mix(in srgb, var(--accent) 18%, transparent); animation: busy-in 0.18s ease-out 0.2s both;
+}
+.busy-strip-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); box-shadow: 0 0 6px var(--accent); transition: width 0.3s ease-out; }
+.busy-strip-fill.indeterminate { width: 35%; animation: progress-slide 1.3s ease-in-out infinite; }
+.tb-btn.running, .tb-btn.running:disabled { opacity: 1; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); cursor: default; }
+.tb-btn.running .tb-btn-label { color: var(--accent); font-weight: 600; }
+.tb-ring { inset: -3px; border-width: 1.5px; animation: kc-spin 0.8s linear infinite, busy-in 0.18s ease-out 0.2s both; }
+.tb-branch.running .tb-label { color: var(--accent); }
+.tb-branch.running .spinner { margin-right: 1px; }
+@media (max-width: 1000px) { .busy-pill-sub { display: none; } .busy-pill { max-width: 200px; } }
 
 /* left panel */
 .lp-filter {

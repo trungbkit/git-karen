@@ -43,8 +43,8 @@ export function TabsBar() {
             role="tab"
             aria-selected={path === active}
             aria-label={`${label(path)}${repo?.busy ? `, ${repo.busy}` : ''}${repo?.status?.operation ? `, ${repo.status.operation} in progress` : ''}`}
-            className={`tab ${path === active ? 'active' : ''}`}
-            title={isSpecialTab(path) ? undefined : path}
+            className={`tab ${path === active ? 'active' : ''} ${repo?.busy ? 'busy' : ''}`}
+            title={isSpecialTab(path) ? undefined : repo?.busy ? `${repo.busy}…\n${path}` : path}
             draggable={path !== WELCOME_TAB}
             onDragStart={() => setDragging(path)}
             onDragEnd={() => setDragging(null)}
@@ -73,7 +73,8 @@ export function TabsBar() {
               ])
             }
           >
-            {repo?.busy && <span className="spinner small" />}
+            {repo?.busy && <span className="spinner small tab-spinner" />}
+            {repo?.busy && <span className="tab-busy-line" aria-hidden />}
             {path === WORKSPACE_TAB && (
               <span className="tab-wt">
                 <Icon name="layers" size={11} />

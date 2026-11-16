@@ -6,7 +6,8 @@ import { showContextMenu } from '../ui/ContextMenu'
 import { checkoutRef, createBranchAt, fetchAll, popStash, pull, pushCurrent, stashChanges } from '../actions/refActions'
 import { createWorktree, currentWorktree, openWorktree, worktreeForBranch } from '../actions/worktreeActions'
 import { dispatch, shortcutFor } from '../keybindings'
-import { useProgress } from '../state/progress'
+import { BusyPill, BusyStrip } from '../ui/BusyIndicator'
+import { busyKind } from '../util/busyKind'
 import '../styles/shell.css'
 
 function menuBelow(e: MouseEvent) {
@@ -21,7 +22,7 @@ export function Toolbar({ repo }: { repo: RepoTab }) {
   const locals = repo.refs.filter((r) => r.type === 'local')
   const hasChanges = !!status && status.staged.length + status.unstaged.length > 0
   const useInAppTerminal = useStore((s) => s.prefs.useInAppTerminal)
-  const progress = useProgress((s) => (busy ? s[repo.path] : undefined))
+  const kind = busy ? busyKind(busy) : null
 
   const thisWorktree = currentWorktree(repo)
   const linked = !!thisWorktree && !thisWorktree.isMain
@@ -56,7 +57,7 @@ export function Toolbar({ repo }: { repo: RepoTab }) {
     ])
 
   return (
-    <div className="toolbar">
+    <div className={`toolbar ${busy ? 'busy' : ''}`}>
       <div className="tb-left">
         <div className="tb-repo" title={repo.path}>
           <span className="tb-label">repository</span>
@@ -73,10 +74,10 @@ export function Toolbar({ repo }: { repo: RepoTab }) {
           </span>
         )}
         <Icon name="chevron-right" size={12} className="muted" />
-        <button className="tb-branch" onClick={branchMenu} title="Switch branch">
-          <span className="tb-label">branch</span>
+        <button className={`tb-branch ${kind === 'checkout' ? 'running' : ''}`} onClick={branchMenu} title={kind === 'checkout' && busy ? `${busy}…` : 'Switch branch'}>
+          <span className="tb-label">{kind === 'checkout' ? 'switching branch…' : 'branch'}</span>
           <span className="tb-value ellipsis">
-            <Icon name="branch" size={12} /> {branch} <Icon name="chevron-down" size={10} />
+            {kind === 'checkout' ? <span className="spinner small" /> : <Icon name="branch" size={12} />} {branch} <Icon name="chevron-down" size={10} />
           </span>
         </button>
       </div>
@@ -84,12 +85,12 @@ export function Toolbar({ repo }: { repo: RepoTab }) {
       <div className="tb-center">
         <ToolButton icon="refresh" label="Refresh" title={`Refresh (${shortcutFor(COMMANDS.refresh) ?? ''})`} onClick={() => dispatch(COMMANDS.refresh)} />
         <div className="tb-split">
-          <ToolButton icon="pull" label="Pull" badge={status?.behind || undefined} disabled={!!busy || repo.remotes.length === 0} onClick={() => void pull('ff')} />
+          <ToolButton icon="pull" label={kind === 'fetch' ? 'Fetching' : kind === 'pull' ? 'Pulling' : 'Pull'} running={kind === 'pull' || kind === 'fetch'} badge={status?.behind || undefined} disabled={!!busy || repo.remotes.length === 0} onClick={() => void pull('ff')} />
           <button className="tb-caret" disabled={!!busy || repo.remotes.length === 0} onClick={pullMenu} title="Pull options" aria-label="Pull options">
             <Icon name="chevron-down" size={10} />
           </button>
         </div>
-        <ToolButton icon="push" label="Push" badge={status?.ahead || undefined} disabled={!!busy || repo.remotes.length === 0} onClick={() => void pushCurrent(repo)} />
+        <ToolButton icon="push" label={kind === 'push' ? 'Pushing' : 'Push'} running={kind === 'push'} badge={status?.ahead || undefined} disabled={!!busy || repo.remotes.length === 0} onClick={() => void pushCurrent(repo)} />
         <ToolButton icon="branch" label="Branch" title={`Create branch (${shortcutFor(COMMANDS.createBranch) ?? ''})`} onClick={() => void createBranchAt()} />
         <ToolButton icon="stash" label="Stash" disabled={!hasChanges} onClick={() => void stashChanges()} />
         <ToolButton icon="stash" label="Pop" disabled={repo.stashes.length === 0} onClick={() => void popStash(0)} flip />
@@ -109,11 +110,7 @@ export function Toolbar({ repo }: { repo: RepoTab }) {
       </div>
 
       <div className="tb-right">
-        {busy && (
-          <span className="tb-busy">
-            <span className="spinner" /> {busy}…{progress?.overall != null && ` ${progress.overall}%`}
-          </span>
-        )}
+        <BusyPill repo={repo} />
         <button className="icon-btn tb-icon" title={`Command palette (${shortcutFor(COMMANDS.toggleFuzzyFinder) ?? ''})`} aria-label={`Command palette (${shortcutFor(COMMANDS.toggleFuzzyFinder) ?? ''})`} onClick={() => dispatch(COMMANDS.toggleFuzzyFinder)}>
           <Icon name="search" size={15} />
         </button>
@@ -121,16 +118,29 @@ export function Toolbar({ repo }: { repo: RepoTab }) {
           <Icon name="settings" size={15} />
         </button>
       </div>
+      <BusyStrip repo={repo} />
     </div>
   )
 }
 
-function ToolButton(p: { icon: IconName; label: string; onClick(e: MouseEvent): void; onContextMenu?(e: MouseEvent): void; disabled?: boolean; title?: string; badge?: number; flip?: boolean }) {
+function ToolButton(p: {
+  icon: IconName
+  label: string
+  onClick(e: MouseEvent): void
+  onContextMenu?(e: MouseEvent): void
+  disabled?: boolean
+  title?: string
+  badge?: number
+  flip?: boolean
+  /** This button started the operation that is running */
+  running?: boolean
+}) {
   return (
-    <button className="tb-btn" disabled={p.disabled} title={p.title ?? p.label} onClick={p.onClick} onContextMenu={p.onContextMenu}>
+    <button className={`tb-btn ${p.running ? 'running' : ''}`} disabled={p.disabled} title={p.title ?? p.label} onClick={p.onClick} onContextMenu={p.onContextMenu}>
       <span className="tb-btn-icon">
+        {p.running && <span className="busy-ring tb-ring" />}
         <Icon name={p.icon} size={17} style={p.flip ? { transform: 'scaleY(-1)' } : undefined} />
-        {p.badge ? <span className="tb-badge">{p.badge}</span> : null}
+        {p.badge && !p.running ? <span className="tb-badge">{p.badge}</span> : null}
       </span>
       <span className="tb-btn-label">{p.label}</span>
     </button>
