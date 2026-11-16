@@ -394,6 +394,8 @@ export interface Preferences {
   /** Row heights of the graph, file lists and left panel (CSS `--row-h`) */
   density: 'comfortable' | 'compact'
   islandLayout: boolean
+  /** Look of controls, menus and lists: Karen's own, or after native macOS apps (works with any theme) */
+  uiStyle: UiStyle
   autoFetchMinutes: number
   defaultBranchName: string
   commitLimit: number
@@ -461,6 +463,8 @@ export interface Preferences {
 
 export type ThemeName = 'dark' | 'light' | 'nord' | 'solarized'
 
+export type UiStyle = 'default' | 'macos'
+
 /** Preferences a graph view preset captures. */
 export const GRAPH_VIEW_KEYS = [
   'showAuthorColumn',
@@ -488,6 +492,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   accentColor: '',
   density: 'comfortable',
   islandLayout: false,
+  uiStyle: 'default',
   autoFetchMinutes: 1,
   defaultBranchName: 'main',
   commitLimit: 2000,

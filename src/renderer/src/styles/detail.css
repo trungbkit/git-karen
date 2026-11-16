@@ -410,4 +410,19 @@
 .layout-preview.island { background: var(--bg-app); }
 .layout-preview.island .lp-cols { gap: 2px; padding: 3px; }
 .layout-preview.island .lp-cols i { border: 1px solid var(--border-strong); border-radius: 3px; }
+.layout-preview .lp-bar { position: relative; display: block; }
+.layout-preview .lp-dots, .layout-preview .lp-cols b { display: none; }
+/* UI style previews: macOS shows traffic lights, a translucent-looking sidebar and rounded source-list rows */
+.layout-preview.style-macos { border-radius: 6px; }
+.layout-preview.style-macos .lp-bar:first-child { height: 10px; }
+.layout-preview.style-macos .lp-dots {
+  display: block; position: absolute; left: 4px; top: 3px; width: 4px; height: 4px; border-radius: 50%;
+  background: #ff5f57; box-shadow: 6px 0 0 #febc2e, 12px 0 0 #28c840;
+}
+.layout-preview.style-macos .lp-cols i:first-child {
+  display: flex; flex-direction: column; gap: 3px; padding: 4px 3px;
+  background: color-mix(in srgb, var(--bg-panel-3) 70%, var(--bg-panel-2));
+}
+.layout-preview.style-macos .lp-cols b { display: block; height: 5px; border-radius: 2px; background: var(--border-strong); }
+.layout-preview.style-macos .lp-cols b:first-child { background: var(--accent); }
 .accent-picker input[type='color'] { width: 30px; height: 24px; padding: 0 2px; border-radius: 6px; cursor: pointer; }

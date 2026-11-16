@@ -1,0 +1,167 @@
+/* macOS UI style (Preferences > UI customization > UI style), on <html data-ui-style="macos">.
+   Restyles controls, menus, lists and the window chrome after native macOS apps. Shapes, sizes and effects only:
+   every colour comes from the active theme's tokens (theme.css), so the style works with all themes and with the
+   island layout. CSS only: the window itself (titlebar, traffic lights) is unchanged, so the tab bar stays 38px
+   (src-tauri/src/traffic_lights.rs centres the window buttons in it). */
+
+/* tokens */
+:root[data-ui-style='macos'] {
+  --radius: 6px;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  --mac-fill: color-mix(in srgb, var(--text) 8%, transparent);
+  --mac-fill-strong: color-mix(in srgb, var(--text) 13%, transparent);
+  --mac-control-bg: color-mix(in srgb, var(--bg-panel-3), var(--text) 9%);
+  --mac-control-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.45), 0 1px 1px rgb(0 0 0 / 0.2), inset 0 0.5px 0 rgb(255 255 255 / 0.1);
+  --mac-material: color-mix(in srgb, var(--bg-panel-3) 78%, transparent);
+  --mac-material-filter: blur(24px) saturate(180%);
+  --mac-sidebar-bg: color-mix(in srgb, var(--bg-panel-2), var(--text) 3%);
+  --mac-outline: 0 0 0 0.5px rgb(0 0 0 / 0.5);
+}
+:root[data-ui-style='macos'][data-scheme='light'] {
+  --mac-control-bg: color-mix(in srgb, var(--bg-panel), white 70%);
+  --mac-control-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.16), 0 0.5px 1.5px rgb(0 0 0 / 0.14);
+  --mac-material: color-mix(in srgb, var(--bg-panel-2) 80%, transparent);
+  --mac-sidebar-bg: color-mix(in srgb, var(--bg-panel-2), var(--text) 4%);
+  --mac-outline: 0 0 0 0.5px rgb(0 0 0 / 0.12);
+}
+
+/* scrollbars after macOS overlay scrollbars: a thin, faint rounded thumb on no track that gets wider and stronger
+   under the pointer. Coloured with plain tokens like the default scrollbar (a color-mix() thumb did not paint in
+   WKWebView), and always shown: a thumb styled on the scroller's :hover did not appear, so it cannot fade in. */
+:root[data-ui-style='macos'] ::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+:root[data-ui-style='macos'] ::-webkit-scrollbar-track, :root[data-ui-style='macos'] ::-webkit-scrollbar-corner { background: transparent; }
+:root[data-ui-style='macos'] ::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong); background-clip: padding-box;
+  border: 2px solid transparent; border-radius: 4px; min-height: 28px;
+}
+:root[data-ui-style='macos'] ::-webkit-scrollbar-thumb:hover { border-width: 1px; background-color: var(--text-disabled); }
+:root[data-ui-style='macos'] ::-webkit-scrollbar-thumb:active { border-width: 1px; background-color: var(--text-secondary); }
+
+/* push buttons */
+:root[data-ui-style='macos'] .btn {
+  min-height: 22px; padding: 2px 11px; border: none; border-radius: var(--radius);
+  background: var(--mac-control-bg); box-shadow: var(--mac-control-shadow);
+}
+:root[data-ui-style='macos'] .btn:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--mac-control-bg), var(--text) 5%); }
+:root[data-ui-style='macos'] .btn:active:not(:disabled) { background: color-mix(in srgb, var(--mac-control-bg), var(--text) 12%); }
+:root[data-ui-style='macos'] .btn.primary, :root[data-ui-style='macos'] .btn.primary:hover:not(:disabled) {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent), white 14%), var(--accent));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent), black 30%), 0 1px 1px rgb(0 0 0 / 0.18); filter: none;
+}
+:root[data-ui-style='macos'] .btn.primary:active:not(:disabled) { background: color-mix(in srgb, var(--accent), black 12%); }
+:root[data-ui-style='macos'] .btn.danger, :root[data-ui-style='macos'] .btn.success { box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 1px 1px rgb(0 0 0 / 0.18); }
+:root[data-ui-style='macos'] .btn.ghost { background: transparent; box-shadow: none; }
+:root[data-ui-style='macos'] .btn.ghost:hover:not(:disabled) { background: var(--mac-fill); }
+:root[data-ui-style='macos'] .btn.danger-ghost { box-shadow: none; background: transparent; }
+:root[data-ui-style='macos'] .btn.danger-ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+:root[data-ui-style='macos'] .btn.small { min-height: 18px; padding: 1px 8px; font-size: 11px; }
+
+/* text fields: hairline border, focus shown as the macOS halo (mouse focus too) */
+:root[data-ui-style='macos'] input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']), :root[data-ui-style='macos'] textarea {
+  border-color: color-mix(in srgb, var(--text) 16%, transparent); border-radius: 5px;
+}
+:root[data-ui-style='macos'] input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']):focus, :root[data-ui-style='macos'] textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent); box-shadow: var(--focus-ring);
+}
+/* bare inputs inside a bordered search box: the box shows the halo */
+:root[data-ui-style='macos'] :is(.lp-filter, .wl-filter, .gh-filter, .fuzzy-input) input:focus { box-shadow: none; }
+:root[data-ui-style='macos'] input[type='checkbox'], :root[data-ui-style='macos'] input[type='radio'], :root[data-ui-style='macos'] input[type='range'] { accent-color: var(--accent); }
+/* popup buttons: the native WebKit control (it follows the theme's color-scheme) */
+:root[data-ui-style='macos'] select {
+  -webkit-appearance: menulist; appearance: auto; background: revert; border: revert; border-radius: revert; padding: revert;
+  box-shadow: none; min-height: 22px;
+}
+
+/* segmented controls */
+:root[data-ui-style='macos'] .seg { border: none; border-radius: 7px; padding: 1px; gap: 1px; background: var(--mac-fill); overflow: visible; }
+:root[data-ui-style='macos'] .seg button { border-radius: 6px; }
+:root[data-ui-style='macos'] .seg button:hover:not(.on) { color: var(--text); }
+:root[data-ui-style='macos'] .seg button.on { background: var(--mac-control-bg); color: var(--text); box-shadow: var(--mac-control-shadow); }
+
+/* tab bar + toolbar read as one unified titlebar; tabs are Safari-style rounded tabs */
+:root[data-ui-style='macos'] .tabs-bar { align-items: center; gap: 4px; padding: 0 8px; background: var(--bg-toolbar); border-bottom-color: transparent; }
+:root[data-ui-style='macos'] .tabs-bar.mac { padding-left: 80px; }
+:root[data-ui-style='macos'] .tab { height: 26px; flex: 0 1 200px; min-width: 80px; padding: 0 6px 0 10px; border: none; border-radius: var(--radius); }
+:root[data-ui-style='macos'] .tab:hover { background: var(--mac-fill); }
+:root[data-ui-style='macos'] .tab.active { background: var(--mac-control-bg); box-shadow: var(--mac-control-shadow); }
+:root[data-ui-style='macos'] .tab-busy-line { bottom: 2px; }
+:root[data-ui-style='macos'] .tab-new { margin-bottom: 0; padding: 5px; }
+:root[data-ui-style='macos'] .tab-new:hover, :root[data-ui-style='macos'] .tab-close:hover { background: var(--mac-fill); }
+
+:root[data-ui-style='macos'] .toolbar { height: 48px; background: var(--bg-toolbar); }
+:root[data-ui-style='macos'] .tb-btn { gap: 1px; padding: 3px 8px; min-width: 48px; border-radius: var(--radius); }
+:root[data-ui-style='macos'] .tb-btn:hover:not(:disabled), :root[data-ui-style='macos'] .tb-branch:hover, :root[data-ui-style='macos'] .tb-caret:hover:not(:disabled) { background: var(--mac-fill); }
+:root[data-ui-style='macos'] .tb-btn:active:not(:disabled), :root[data-ui-style='macos'] .tb-branch:active { background: var(--mac-fill-strong); }
+:root[data-ui-style='macos'] .tb-btn-label { font-size: 10.5px; }
+:root[data-ui-style='macos'] .tb-label { text-transform: none; letter-spacing: 0; font-size: 11px; }
+:root[data-ui-style='macos'] .busy-pill { height: 30px; border-radius: 15px; }
+:root[data-ui-style='macos'] .icon-btn { border-radius: 5px; }
+:root[data-ui-style='macos'] .icon-btn:hover { background: var(--mac-fill); }
+
+:root[data-ui-style='macos'] .status-bar { height: 22px; font-size: 11px; }
+
+/* sidebar as a source list: inset rows with rounded selection, accent fill while the list has focus */
+:root[data-ui-style='macos'] .panel-left { background: var(--mac-sidebar-bg); }
+:root[data-ui-style='macos'] .lp-filter { margin: 8px 10px; height: 26px; border: none; border-radius: 7px; background: var(--mac-fill); }
+:root[data-ui-style='macos'] .lp-filter:focus-within { box-shadow: var(--focus-ring); }
+:root[data-ui-style='macos'] .lp-section-header {
+  margin: 0 8px; padding: 0 6px 0 8px; border-radius: var(--radius);
+  text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text-disabled);
+}
+:root[data-ui-style='macos'] .lp-section-header:hover { background: transparent; color: var(--text-secondary); }
+:root[data-ui-style='macos'] .lp-row { margin: 0 8px; border-radius: var(--radius); }
+:root[data-ui-style='macos'] .lp-row:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+:root[data-ui-style='macos'] .lp-row.selected { background: var(--mac-fill-strong); }
+:root[data-ui-style='macos'] .lp-scroll:focus-within .lp-row.selected { background: var(--accent); color: var(--on-accent); }
+:root[data-ui-style='macos'] .lp-scroll:focus-within .lp-row.selected :not(.lp-wip, .lp-badge, .lp-state, .lp-state *, .lp-pr-draft) { color: inherit; }
+:root[data-ui-style='macos'] .lp-scroll:focus-within .lp-row.selected .icon-btn:hover { background: color-mix(in srgb, var(--on-accent) 20%, transparent); }
+:root[data-ui-style='macos'] .lp-footer { border-top-color: transparent; }
+
+/* section and column headers: sentence case, like macOS table headers and sidebar sections */
+:root[data-ui-style='macos'] :is(.section-head, .graph-header, .merge-pane-head, .cmp-section-head, .home-heading, .lp-pr-group, .kb-table .kb-section) {
+  text-transform: none; letter-spacing: 0;
+}
+
+/* menus and popovers: translucent material, rounded, hairline outline */
+:root[data-ui-style='macos'] .ctx-menu {
+  min-width: 180px; padding: 5px; border: none; border-radius: 9px;
+  background: var(--mac-material); -webkit-backdrop-filter: var(--mac-material-filter); backdrop-filter: var(--mac-material-filter);
+  box-shadow: var(--mac-outline), inset 0 0 0 0.5px color-mix(in srgb, var(--text) 10%, transparent), var(--shadow-menu);
+}
+:root[data-ui-style='macos'] .ctx-item { align-items: center; min-height: 22px; padding: 2px 9px; border-radius: 5px; }
+:root[data-ui-style='macos'] .ctx-item .muted { color: var(--text-disabled); }
+:root[data-ui-style='macos'] .ctx-item:hover .muted, :root[data-ui-style='macos'] .ctx-item:focus .muted { color: inherit; opacity: 0.85; }
+:root[data-ui-style='macos'] .ctx-sep { margin: 5px 9px; }
+:root[data-ui-style='macos'] :is(.ci-card, .coauthor-picker, .g-ref-popover, .ref-card, .gh-suggest) {
+  border: none; border-radius: 9px;
+  background: var(--mac-material); -webkit-backdrop-filter: var(--mac-material-filter); backdrop-filter: var(--mac-material-filter);
+  box-shadow: var(--mac-outline), inset 0 0 0 0.5px color-mix(in srgb, var(--text) 10%, transparent), var(--shadow-popover);
+}
+
+/* dialogs as sheets */
+:root[data-ui-style='macos'] .modal-overlay { background: color-mix(in srgb, var(--overlay) 55%, transparent); }
+:root[data-ui-style='macos'] .modal {
+  border: none; border-radius: 12px;
+  box-shadow: var(--mac-outline), inset 0 0 0 0.5px color-mix(in srgb, var(--text) 10%, transparent), var(--shadow-modal);
+}
+:root[data-ui-style='macos'] .modal-header { border-bottom: none; padding: 16px 20px 4px; }
+:root[data-ui-style='macos'] .modal-body { padding: 12px 20px; }
+:root[data-ui-style='macos'] .modal-footer { border-top: none; padding: 8px 20px 18px; }
+
+/* command palette like Spotlight */
+:root[data-ui-style='macos'] .fuzzy {
+  border: none; border-radius: 14px;
+  background: var(--mac-material); -webkit-backdrop-filter: var(--mac-material-filter); backdrop-filter: var(--mac-material-filter);
+  box-shadow: var(--mac-outline), inset 0 0 0 0.5px color-mix(in srgb, var(--text) 10%, transparent), var(--shadow-modal);
+}
+:root[data-ui-style='macos'] .fuzzy-item.active { background: var(--accent); color: var(--on-accent); }
+:root[data-ui-style='macos'] .fuzzy-item.active :is(svg, .fuzzy-detail, .fuzzy-label b) { color: inherit; }
+
+/* toasts as notification banners: the outcome colours the title instead of a thick left edge */
+:root[data-ui-style='macos'] .toast {
+  overflow: hidden; border: none; border-radius: 14px;
+  background: var(--mac-material); -webkit-backdrop-filter: var(--mac-material-filter); backdrop-filter: var(--mac-material-filter);
+  box-shadow: var(--mac-outline), inset 0 0 0 0.5px color-mix(in srgb, var(--text) 10%, transparent), var(--shadow-menu);
+}
+:root[data-ui-style='macos'] .toast.success .toast-title { color: var(--success); }
+:root[data-ui-style='macos'] .toast.error .toast-title { color: var(--danger); }

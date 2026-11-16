@@ -7,7 +7,7 @@ import { IntegrationsSettings } from './IntegrationsSettings'
 import { CliSettings } from './CliSettings'
 import { UpdateSettings } from './UpdateSettings'
 import { AiQuickSetup } from './AiQuickSetup'
-import { ACCENT_PRESETS, parseHex, THEMES } from '../ui/appearance'
+import { ACCENT_PRESETS, parseHex, resolveUiStyle, THEMES, UI_STYLES } from '../ui/appearance'
 import { AI_CREDENTIALS, credentialInfo, keyProblem, PROVIDER_LABELS } from '../smart/aiKeys'
 import '../styles/detail.css'
 
@@ -300,6 +300,38 @@ export function PreferencesModal() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="field">
+                <span className="field-label" id="ui-style-label">
+                  UI style
+                </span>
+                <div className="layout-options" role="group" aria-labelledby="ui-style-label">
+                  {UI_STYLES.map((s) => {
+                    const on = resolveUiStyle(draft.uiStyle) === s.id
+                    return (
+                      <button key={s.id} type="button" className={`layout-option${on ? ' selected' : ''}`} aria-pressed={on} onClick={() => set('uiStyle', s.id)}>
+                        <span className={`layout-preview style-${s.id}`}>
+                          <i className="lp-bar">
+                            <i className="lp-dots" />
+                          </i>
+                          <i className="lp-bar" />
+                          <span className="lp-cols">
+                            <i>
+                              <b />
+                              <b />
+                              <b />
+                            </i>
+                            <i />
+                            <i />
+                          </span>
+                          <i className="lp-bar" />
+                        </span>
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <span className="hint">Restyles controls, menus and lists after native macOS apps. Works with any theme and layout.</span>
               </div>
               <div className="field">
                 <span className="field-label" id="accent-label">

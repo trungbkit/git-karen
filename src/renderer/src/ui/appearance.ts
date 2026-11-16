@@ -1,6 +1,6 @@
 // Appearance preferences (theme, accent colour, density) turned into attributes and CSS variables on <html>.
 // Pure helpers apart from applyAppearance(); styles/theme.css holds the colours of each theme.
-import type { Preferences, ThemeName } from '@shared/types'
+import type { Preferences, ThemeName, UiStyle } from '@shared/types'
 
 /** Light or dark: picks syntax highlighting colours and how a custom accent is shaded. */
 export type Scheme = 'dark' | 'light'
@@ -11,6 +11,17 @@ export const THEMES: { id: ThemeName; label: string; scheme: Scheme }[] = [
   { id: 'nord', label: 'Nord', scheme: 'dark' },
   { id: 'solarized', label: 'Solarized Light', scheme: 'light' }
 ]
+
+/** UI styles: Karen's own look, or controls, menus and lists after native macOS apps (styles/macos.css). */
+export const UI_STYLES: { id: UiStyle; label: string }[] = [
+  { id: 'default', label: 'Karen' },
+  { id: 'macos', label: 'macOS' }
+]
+
+/** The UI style shown: a value saved by a newer version falls back to the default. */
+export function resolveUiStyle(style: Preferences['uiStyle'] | undefined): UiStyle {
+  return UI_STYLES.some((s) => s.id === style) ? style! : 'default'
+}
 
 /** Accent swatches offered in Preferences (any colour can be picked). */
 export const ACCENT_PRESETS = ['#5e91ff', '#2aa198', '#4fbf72', '#e3a33b', '#e5534b', '#d33682', '#9b6cf0', '#88c0d0']
@@ -85,14 +96,15 @@ export function fontStack(family: string, builtIn: string): string {
   return name ? `"${name}", ${builtIn}` : builtIn
 }
 
-/** Apply theme, accent and density to <html>. `systemDark` is the OS setting (`prefers-color-scheme`). */
-export function applyAppearance(prefs: Pick<Preferences, 'theme' | 'accentColor' | 'density'>, systemDark: boolean) {
+/** Apply theme, accent, density and UI style to <html>. `systemDark` is the OS setting (`prefers-color-scheme`). */
+export function applyAppearance(prefs: Pick<Preferences, 'theme' | 'accentColor' | 'density' | 'uiStyle'>, systemDark: boolean) {
   const root = document.documentElement
   const theme = resolveTheme(prefs.theme, systemDark)
   const scheme = schemeOf(theme)
   root.dataset.theme = theme
   root.dataset.scheme = scheme
   root.dataset.density = prefs.density
+  root.dataset.uiStyle = resolveUiStyle(prefs.uiStyle)
   root.style.setProperty('--row-h', `${rowHeight(prefs.density)}px`)
   const vars = accentVars(prefs.accentColor, scheme)
   for (const key of ACCENT_KEYS) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accentVars, fontStack, parseHex, resolveTheme, rowHeight, schemeOf, textOn } from './appearance'
+import { accentVars, fontStack, parseHex, resolveTheme, resolveUiStyle, rowHeight, schemeOf, textOn } from './appearance'
 
 describe('themes', () => {
   it('follows the system setting for "system" and keeps a chosen theme', () => {
@@ -60,5 +60,14 @@ describe('fontStack', () => {
     expect(fontStack('', 'monospace')).toBe('monospace')
     expect(fontStack(' Inter ', 'sans-serif')).toBe('"Inter", sans-serif')
     expect(fontStack('Evil"; color: red', 'sans-serif')).toBe('"Evil color: red", sans-serif')
+  })
+})
+
+describe('ui style', () => {
+  it('keeps a known style and falls back to the default', () => {
+    expect(resolveUiStyle('macos')).toBe('macos')
+    expect(resolveUiStyle('default')).toBe('default')
+    expect(resolveUiStyle(undefined)).toBe('default')
+    expect(resolveUiStyle('windows' as never)).toBe('default')
   })
 })

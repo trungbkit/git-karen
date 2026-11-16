@@ -40,6 +40,7 @@ export function App() {
   const accentColor = useStore((s) => s.prefs.accentColor)
   const density = useStore((s) => s.prefs.density)
   const islandLayout = useStore((s) => s.prefs.islandLayout)
+  const uiStyle = useStore((s) => s.prefs.uiStyle)
   const fontSize = useStore((s) => s.prefs.fontSize)
   const uiFont = useStore((s) => s.prefs.uiFont)
   const monoFont = useStore((s) => s.prefs.monoFont)
@@ -58,11 +59,11 @@ export function App() {
   useEffect(() => {
     // 'system' follows the OS setting live: the media query fires when it changes
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = () => applyAppearance({ theme, accentColor, density }, mq.matches)
+    const apply = () => applyAppearance({ theme, accentColor, density, uiStyle }, mq.matches)
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [theme, accentColor, density])
+  }, [theme, accentColor, density, uiStyle])
 
   useEffect(() => {
     document.documentElement.style.setProperty('--font-size', `${fontSize}px`)
