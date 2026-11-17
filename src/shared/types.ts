@@ -389,7 +389,7 @@ export interface CliStatus {
 export interface Preferences {
   /** 'system' follows the OS light/dark setting (dark or light theme), live */
   theme: ThemeName | 'system'
-  /** Custom accent colour (#rrggbb); empty uses the theme's own */
+  /** Custom accent colour (#rrggbb); empty uses the theme's own, 'system' the macOS accent colour */
   accentColor: string
   /** Row heights of the graph, file lists and left panel (CSS `--row-h`) */
   density: 'comfortable' | 'compact'
@@ -849,7 +849,20 @@ export interface AppApi {
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   /** Called with the window's native fullscreen state now and whenever it changes. Returns an unsubscribe fn. */
   onFullscreenChange(cb: (fullscreen: boolean) => void): () => void
+  /** Native window background (`#rrggbb`, the theme's --bg-app); new windows open with the last one */
+  setWindowBackground(color: string): Promise<void>
+  /** OS appearance settings pages cannot read (macOS; defaults elsewhere) */
+  systemAppearance(): Promise<SystemAppearance>
   platform: string
+}
+
+export interface SystemAppearance {
+  /** The system accent colour (#rrggbb); null where the OS has none */
+  accentColor: string | null
+  /** Accessibility: Reduce transparency */
+  reduceTransparency: boolean
+  /** Accessibility: Increase contrast */
+  increaseContrast: boolean
 }
 
 export type AiProvider = 'anthropic' | 'openai' | 'gemini'

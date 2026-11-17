@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DEFAULT_PREFERENCES, type AiCredential, type AiSettings, type AiStatus, type Preferences } from '@shared/types'
 import { useStore } from '../state/store'
 import { Modal } from '../ui/Modal'
@@ -7,7 +7,7 @@ import { IntegrationsSettings } from './IntegrationsSettings'
 import { CliSettings } from './CliSettings'
 import { UpdateSettings } from './UpdateSettings'
 import { AiQuickSetup } from './AiQuickSetup'
-import { ACCENT_PRESETS, parseHex, resolveUiStyle, THEMES, UI_STYLES } from '../ui/appearance'
+import { ACCENT_PRESETS, parseHex, resolveUiStyle, SYSTEM_ACCENT, THEMES, UI_STYLES } from '../ui/appearance'
 import { AI_CREDENTIALS, credentialInfo, keyProblem, PROVIDER_LABELS } from '../smart/aiKeys'
 import '../styles/detail.css'
 
@@ -35,6 +35,12 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 /** `#abc` as `#aabbcc` (the colour input only takes the long form). */
 const normalizeHex = (c: string) => `#${parseHex(c)!.map((v) => v.toString(16).padStart(2, '0')).join('')}`
+
+/** Shown on the app as soon as they are picked; Save keeps them, closing the dialog otherwise puts the saved ones back. */
+type LiveKey = 'islandLayout' | 'uiStyle'
+
+/** Show live settings on the app without saving them. */
+const preview = (patch: Partial<Pick<Preferences, LiveKey>>) => useStore.setState((s) => ({ prefs: { ...s.prefs, ...patch } }))
 
 interface Identity {
   name: string
@@ -153,9 +159,24 @@ export function PreferencesModal() {
   const set = <K extends keyof Preferences>(key: K, value: Preferences[K]) => setDraft((d) => ({ ...d, [key]: value }))
   const close = () => setModal(null)
 
+  // live settings: previewed on pick, put back when the dialog goes away unsaved (Cancel, Escape, another dialog)
+  const savedLive = useRef<Pick<Preferences, LiveKey>>({ islandLayout: prefs.islandLayout, uiStyle: prefs.uiStyle })
+  const saved = useRef(false)
+  useEffect(
+    () => () => {
+      if (!saved.current) preview(savedLive.current)
+    },
+    []
+  )
+  const setLive = <K extends LiveKey>(key: K, value: Preferences[K]) => {
+    set(key, value)
+    preview({ [key]: value })
+  }
+
   const save = async () => {
     try {
       await setPrefs(draft)
+      saved.current = true
       await saveAi()
       if (loadedIds) {
         if (globalId.name !== loadedIds.global.name) await window.git.setConfig(null, 'user.name', globalId.name, true)
@@ -285,7 +306,7 @@ export function PreferencesModal() {
                 </span>
                 <div className="layout-options" role="group" aria-labelledby="layout-label">
                   {([false, true] as const).map((island) => (
-                    <button key={String(island)} type="button" className={`layout-option${draft.islandLayout === island ? ' selected' : ''}`} aria-pressed={draft.islandLayout === island} onClick={() => set('islandLayout', island)}>
+                    <button key={String(island)} type="button" className={`layout-option${draft.islandLayout === island ? ' selected' : ''}`} aria-pressed={draft.islandLayout === island} onClick={() => setLive('islandLayout', island)}>
                       <span className={`layout-preview${island ? ' island' : ''}`}>
                         <i className="lp-bar" />
                         <i className="lp-bar" />
@@ -309,7 +330,7 @@ export function PreferencesModal() {
                   {UI_STYLES.map((s) => {
                     const on = resolveUiStyle(draft.uiStyle) === s.id
                     return (
-                      <button key={s.id} type="button" className={`layout-option${on ? ' selected' : ''}`} aria-pressed={on} onClick={() => set('uiStyle', s.id)}>
+                      <button key={s.id} type="button" className={`layout-option${on ? ' selected' : ''}`} aria-pressed={on} onClick={() => setLive('uiStyle', s.id)}>
                         <span className={`layout-preview style-${s.id}`}>
                           <i className="lp-bar">
                             <i className="lp-dots" />
@@ -341,6 +362,16 @@ export function PreferencesModal() {
                   <button className={`accent-swatch theme ${draft.accentColor ? '' : 'on'}`} aria-pressed={!draft.accentColor} title="The theme's own accent" onClick={() => set('accentColor', '')}>
                     Theme
                   </button>
+                  {window.app.platform === 'darwin' && (
+                    <button
+                      className={`accent-swatch theme system ${draft.accentColor === SYSTEM_ACCENT ? 'on' : ''}`}
+                      aria-pressed={draft.accentColor === SYSTEM_ACCENT}
+                      title="The macOS accent color (System Settings > Appearance), following it as it changes"
+                      onClick={() => set('accentColor', SYSTEM_ACCENT)}
+                    >
+                      System
+                    </button>
+                  )}
                   {ACCENT_PRESETS.map((c) => (
                     <button
                       key={c}

@@ -34,6 +34,9 @@ pub struct AppState {
     pub active_tab: Option<String>,
     pub preferences: Map<String, Value>,
     pub workspaces: Vec<Workspace>,
+    /// `--bg-app` of the theme last shown (`#rrggbb`): new windows open with it, so a light theme does not flash dark
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_background: Option<String>,
 }
 
 fn basename(p: &str) -> String {
@@ -72,6 +75,7 @@ impl AppStateStore {
                 .as_array()
                 .map(|a| a.iter().filter_map(|w| serde_json::from_value(w.clone()).ok()).collect())
                 .unwrap_or_default(),
+            window_background: raw["windowBackground"].as_str().map(String::from),
         }
     }
 
@@ -91,6 +95,19 @@ impl AppStateStore {
 
     pub fn preference_str(&self, key: &str) -> Option<String> {
         self.state.preferences.get(key).and_then(Value::as_str).map(String::from)
+    }
+
+    pub fn window_background(&self) -> Option<&str> {
+        self.state.window_background.as_deref()
+    }
+
+    /// Saved only when it changes: the renderer reports it on every appearance change.
+    pub fn set_window_background(&mut self, color: &str) -> Result<(), String> {
+        if self.state.window_background.as_deref() == Some(color) {
+            return Ok(());
+        }
+        self.state.window_background = Some(color.to_string());
+        self.save()
     }
 
     pub fn preference_bool(&self, key: &str) -> Option<bool> {

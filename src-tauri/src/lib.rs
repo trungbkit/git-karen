@@ -2,6 +2,7 @@
 // The renderer reaches the backend only through the commands below (see src/renderer/src/platform/bridge.ts).
 mod ai;
 mod app_state;
+mod appearance;
 mod editor;
 mod git;
 mod integrations;
@@ -132,6 +133,19 @@ async fn app_call(
             }
             Ok(Value::Null)
         }
+        "setWindowBackground" => {
+            let color: String = a.get(0)?;
+            let (r, g, b) = appearance::parse_hex(&color).ok_or_else(|| format!("Not a hex colour: {color}"))?;
+            window.set_background_color(Some(tauri::window::Color(r, g, b, 0xff))).map_err(|e| e.to_string())?;
+            store().set_window_background(&format!("#{r:02x}{g:02x}{b:02x}"))?;
+            Ok(Value::Null)
+        }
+        "systemAppearance" => {
+            // AppKit is read on the main thread
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            app.run_on_main_thread(move || drop(tx.send(appearance::read_system()))).map_err(|e| e.to_string())?;
+            to_value(rx.await.map_err(|e| e.to_string())?)
+        }
         "openTerminal" => {
             let terminal = store().preference_str("externalTerminal").unwrap_or_else(|| "Terminal".into());
             app_state::open_terminal(&terminal, &a.get::<String>(0)?)?;
@@ -218,11 +232,13 @@ fn create_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let dev_origin = app.config().build.dev_url.as_ref().map(|u| u.origin());
     let handle = app.clone();
     let drop_label = label.clone();
+    // the last theme's background, so the window does not flash another colour before the page paints
+    let bg = app.state::<Backend>().store.lock().unwrap().window_background().and_then(appearance::parse_hex).unwrap_or(appearance::DEFAULT_BACKGROUND);
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::default())
         .title("Karen")
         .inner_size(1400.0, 900.0)
         .min_inner_size(900.0, 600.0)
-        .background_color(tauri::window::Color(0x16, 0x18, 0x1d, 0xff))
+        .background_color(tauri::window::Color(bg.0, bg.1, bg.2, 0xff))
         // the native file-drop handler would swallow the HTML5 drag-and-drop the graph and tabs rely on
         .disable_drag_drop_handler()
         .initialization_script(format!("window.__KC_PLATFORM__ = {:?};", platform()))

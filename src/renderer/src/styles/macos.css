@@ -100,7 +100,7 @@
 
 :root[data-ui-style='macos'] .status-bar { height: 22px; font-size: 11px; }
 
-/* sidebar as a source list: inset rows with rounded selection, accent fill while the list has focus */
+/* sidebar as a source list: inset rows with rounded selection, accent fill while the list has focus (in an active window) */
 :root[data-ui-style='macos'] .panel-left { background: var(--mac-sidebar-bg); }
 :root[data-ui-style='macos'] .lp-filter { margin: 8px 10px; height: 26px; border: none; border-radius: 7px; background: var(--mac-fill); }
 :root[data-ui-style='macos'] .lp-filter:focus-within { box-shadow: var(--focus-ring); }
@@ -112,9 +112,9 @@
 :root[data-ui-style='macos'] .lp-row { margin: 0 8px; border-radius: var(--radius); }
 :root[data-ui-style='macos'] .lp-row:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
 :root[data-ui-style='macos'] .lp-row.selected { background: var(--mac-fill-strong); }
-:root[data-ui-style='macos'] .lp-scroll:focus-within .lp-row.selected { background: var(--accent); color: var(--on-accent); }
-:root[data-ui-style='macos'] .lp-scroll:focus-within .lp-row.selected :not(.lp-wip, .lp-badge, .lp-state, .lp-state *, .lp-pr-draft) { color: inherit; }
-:root[data-ui-style='macos'] .lp-scroll:focus-within .lp-row.selected .icon-btn:hover { background: color-mix(in srgb, var(--on-accent) 20%, transparent); }
+:root[data-ui-style='macos']:not([data-window-active='false']) .lp-scroll:focus-within .lp-row.selected { background: var(--accent); color: var(--on-accent); }
+:root[data-ui-style='macos']:not([data-window-active='false']) .lp-scroll:focus-within .lp-row.selected :not(.lp-wip, .lp-badge, .lp-state, .lp-state *, .lp-pr-draft) { color: inherit; }
+:root[data-ui-style='macos']:not([data-window-active='false']) .lp-scroll:focus-within .lp-row.selected .icon-btn:hover { background: color-mix(in srgb, var(--on-accent) 20%, transparent); }
 :root[data-ui-style='macos'] .lp-footer { border-top-color: transparent; }
 
 /* section and column headers: sentence case, like macOS table headers and sidebar sections */
@@ -123,10 +123,18 @@
 }
 
 /* menus and popovers: translucent material, rounded, hairline outline */
+/* The material sits on a ::before layer, not on the menu: a backdrop-filter makes its element the containing block of
+   position: fixed descendants, and a submenu is a fixed child of its menu placed in window coordinates (ContextMenu.tsx),
+   so it would land off-screen. The menu is a stacking context (fixed + z-index), so z-index -1 keeps the layer behind
+   its items. */
 :root[data-ui-style='macos'] .ctx-menu {
-  min-width: 180px; padding: 5px; border: none; border-radius: 9px;
+  min-width: 180px; padding: 5px; border: none; border-radius: 9px; background: transparent;
+  box-shadow: var(--mac-outline), var(--shadow-menu);
+}
+:root[data-ui-style='macos'] .ctx-menu::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
   background: var(--mac-material); -webkit-backdrop-filter: var(--mac-material-filter); backdrop-filter: var(--mac-material-filter);
-  box-shadow: var(--mac-outline), inset 0 0 0 0.5px color-mix(in srgb, var(--text) 10%, transparent), var(--shadow-menu);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--text) 10%, transparent);
 }
 :root[data-ui-style='macos'] .ctx-item { align-items: center; min-height: 22px; padding: 2px 9px; border-radius: 5px; }
 :root[data-ui-style='macos'] .ctx-item .muted { color: var(--text-disabled); }
@@ -165,3 +173,31 @@
 }
 :root[data-ui-style='macos'] .toast.success .toast-title { color: var(--success); }
 :root[data-ui-style='macos'] .toast.error .toast-title { color: var(--danger); }
+
+/* inactive window (another window or app has focus): like AppKit, selections turn grey and the titlebar content
+   dims. !important: a custom accent sets the selection colours inline on <html> (ui/appearance.ts). */
+:root[data-ui-style='macos'][data-window-active='false'] {
+  --bg-selected: var(--mac-fill) !important;
+  --bg-selected-strong: var(--mac-fill-strong) !important;
+}
+:root[data-ui-style='macos'][data-window-active='false'] .graph { --g-selected-row: var(--mac-fill-strong); --g-hover-row: var(--mac-fill); }
+:root[data-ui-style='macos'][data-window-active='false'] :is(.tabs-bar .tab, .tabs-bar .tab-new, .toolbar .tb-left, .toolbar .tb-center, .toolbar .tb-right) { opacity: 0.5; }
+:root[data-ui-style='macos'][data-window-active='false'] .tab.active { box-shadow: none; }
+
+/* Accessibility > Reduce transparency: opaque menus, popovers and banners, no blur */
+:root[data-ui-style='macos'][data-reduce-transparency='true'] {
+  --mac-material: var(--bg-panel-3);
+  --mac-material-filter: none;
+}
+
+/* Accessibility > Increase contrast: solid outlines on controls, menus and fields, stronger fills
+   (theme.css strengthens the borders and secondary text of every style) */
+:root[data-ui-style='macos'][data-contrast='more'] {
+  --mac-fill: color-mix(in srgb, var(--text) 14%, transparent);
+  --mac-fill-strong: color-mix(in srgb, var(--text) 24%, transparent);
+  --mac-control-shadow: 0 0 0 1px var(--border-strong);
+  --mac-outline: 0 0 0 1px var(--border-strong);
+}
+:root[data-ui-style='macos'][data-contrast='more'] input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']),
+:root[data-ui-style='macos'][data-contrast='more'] textarea { border-color: var(--border-strong); }
+:root[data-ui-style='macos'][data-contrast='more'] .btn.primary { box-shadow: 0 0 0 1px var(--text); }

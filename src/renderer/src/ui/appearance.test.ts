@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accentVars, fontStack, parseHex, resolveTheme, resolveUiStyle, rowHeight, schemeOf, textOn } from './appearance'
+import { accentVars, fontStack, parseHex, resolveAccent, resolveTheme, resolveUiStyle, rowHeight, schemeOf, SYSTEM_ACCENT, textOn } from './appearance'
 
 describe('themes', () => {
   it('follows the system setting for "system" and keeps a chosen theme', () => {
@@ -69,5 +69,14 @@ describe('ui style', () => {
     expect(resolveUiStyle('default')).toBe('default')
     expect(resolveUiStyle(undefined)).toBe('default')
     expect(resolveUiStyle('windows' as never)).toBe('default')
+  })
+})
+
+describe('system accent', () => {
+  it('follows the system colour, the theme while it is unknown, and leaves other choices alone', () => {
+    expect(resolveAccent(SYSTEM_ACCENT, '#007aff')).toBe('#007aff')
+    expect(resolveAccent(SYSTEM_ACCENT, null)).toBe('')
+    expect(resolveAccent('#e5534b', '#007aff')).toBe('#e5534b')
+    expect(resolveAccent('', '#007aff')).toBe('')
   })
 })

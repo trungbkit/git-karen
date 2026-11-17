@@ -1,6 +1,6 @@
 // Appearance preferences (theme, accent colour, density) turned into attributes and CSS variables on <html>.
 // Pure helpers apart from applyAppearance(); styles/theme.css holds the colours of each theme.
-import type { Preferences, ThemeName, UiStyle } from '@shared/types'
+import type { Preferences, SystemAppearance, ThemeName, UiStyle } from '@shared/types'
 
 /** Light or dark: picks syntax highlighting colours and how a custom accent is shaded. */
 export type Scheme = 'dark' | 'light'
@@ -21,6 +21,14 @@ export const UI_STYLES: { id: UiStyle; label: string }[] = [
 /** The UI style shown: a value saved by a newer version falls back to the default. */
 export function resolveUiStyle(style: Preferences['uiStyle'] | undefined): UiStyle {
   return UI_STYLES.some((s) => s.id === style) ? style! : 'default'
+}
+
+/** `accentColor` value that follows the macOS accent colour (System Settings > Appearance). */
+export const SYSTEM_ACCENT = 'system'
+
+/** The accent colour to apply: the system's for SYSTEM_ACCENT (the theme's while it is unknown), else the preference. */
+export function resolveAccent(pref: string, systemAccent: string | null): string {
+  return pref === SYSTEM_ACCENT ? (systemAccent ?? '') : pref
 }
 
 /** Accent swatches offered in Preferences (any colour can be picked). */
@@ -96,8 +104,15 @@ export function fontStack(family: string, builtIn: string): string {
   return name ? `"${name}", ${builtIn}` : builtIn
 }
 
-/** Apply theme, accent, density and UI style to <html>. `systemDark` is the OS setting (`prefers-color-scheme`). */
-export function applyAppearance(prefs: Pick<Preferences, 'theme' | 'accentColor' | 'density' | 'uiStyle'>, systemDark: boolean) {
+/**
+ * Apply theme, accent, density and UI style to <html>, with the OS settings: `systemDark` (`prefers-color-scheme`),
+ * and the accent colour and accessibility options of `system` (styles key on data-contrast and data-reduce-transparency).
+ */
+export function applyAppearance(
+  prefs: Pick<Preferences, 'theme' | 'accentColor' | 'density' | 'uiStyle'>,
+  systemDark: boolean,
+  system?: SystemAppearance
+) {
   const root = document.documentElement
   const theme = resolveTheme(prefs.theme, systemDark)
   const scheme = schemeOf(theme)
@@ -105,8 +120,10 @@ export function applyAppearance(prefs: Pick<Preferences, 'theme' | 'accentColor'
   root.dataset.scheme = scheme
   root.dataset.density = prefs.density
   root.dataset.uiStyle = resolveUiStyle(prefs.uiStyle)
+  root.dataset.contrast = system?.increaseContrast ? 'more' : 'normal'
+  root.dataset.reduceTransparency = String(Boolean(system?.reduceTransparency))
   root.style.setProperty('--row-h', `${rowHeight(prefs.density)}px`)
-  const vars = accentVars(prefs.accentColor, scheme)
+  const vars = accentVars(resolveAccent(prefs.accentColor, system?.accentColor ?? null), scheme)
   for (const key of ACCENT_KEYS) {
     if (vars[key]) root.style.setProperty(key, vars[key])
     else root.style.removeProperty(key)

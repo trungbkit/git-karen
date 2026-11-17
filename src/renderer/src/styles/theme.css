@@ -289,3 +289,12 @@
   --term-bright-white: #fdf6e3;
   color-scheme: light;
 }
+
+/* Increase contrast (macOS Accessibility, or prefers-contrast: more; data-contrast is set by ui/appearance.ts):
+   stronger borders and secondary text, in every theme. After the themes so it wins at equal specificity. */
+:root[data-contrast='more'] {
+  --border: color-mix(in srgb, var(--text) 34%, var(--bg-app));
+  --border-strong: color-mix(in srgb, var(--text) 52%, var(--bg-app));
+  --text-secondary: color-mix(in srgb, var(--text) 86%, var(--bg-app));
+  --text-disabled: color-mix(in srgb, var(--text) 62%, var(--bg-app));
+}

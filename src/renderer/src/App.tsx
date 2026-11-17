@@ -28,6 +28,7 @@ import { DEFAULT_PREFERENCES } from '@shared/types'
 import { WorkspaceView } from './components/WorkspaceView'
 import { useFileDragHint, useOpenRequests } from './actions/openActions'
 import { applyAppearance, fontStack } from './ui/appearance'
+import { syncWindowBackground, useSystemAppearance, useWindowActive } from './ui/systemAppearance'
 // installs the explained git error toasts (with fixes) into the store's `run`
 import './actions/errorActions'
 import { useProgressEvents } from './state/progress'
@@ -56,14 +57,20 @@ export function App() {
     void init()
   }, [init])
 
+  const system = useSystemAppearance()
+  useWindowActive()
+
   useEffect(() => {
     // 'system' follows the OS setting live: the media query fires when it changes
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = () => applyAppearance({ theme, accentColor, density, uiStyle }, mq.matches)
+    const apply = () => {
+      applyAppearance({ theme, accentColor, density, uiStyle }, mq.matches, system)
+      syncWindowBackground()
+    }
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [theme, accentColor, density, uiStyle])
+  }, [theme, accentColor, density, uiStyle, system])
 
   useEffect(() => {
     document.documentElement.style.setProperty('--font-size', `${fontSize}px`)

@@ -115,6 +115,8 @@ const app: AppApi = {
     check()
     return disposable(win.onResized(check))
   },
+  setWindowBackground: (color) => appCall('setWindowBackground', color),
+  systemAppearance: () => appCall('systemAppearance'),
   platform: detectPlatform()
 }
 
