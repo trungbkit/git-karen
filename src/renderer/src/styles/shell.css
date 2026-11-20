@@ -135,6 +135,12 @@
 }
 .lp-section-header:hover { color: var(--text); background: var(--bg-hover); }
 .lp-section-title { flex: 1; }
+.lp-badge {
+  flex: none; height: 16px; padding: 0 7px; border-radius: 8px; border: none; cursor: pointer;
+  font-size: 10px; font-weight: 600; text-transform: none; letter-spacing: 0; line-height: 16px;
+  color: var(--text-accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.lp-badge:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
 .lp-count { font-size: 11px; font-weight: 500; color: var(--text-disabled); }
 .lp-folder .lp-count { margin-left: auto; padding-right: 8px; }
 .lp-match { font-weight: 700; color: var(--text-accent); }

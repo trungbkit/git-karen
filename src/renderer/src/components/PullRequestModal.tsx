@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { MergeMethod, PullRequestDetail, ReviewEvent, TimelineItem } from '@shared/integrations'
 import { useStore, type RepoTab } from '../state/store'
 import { useHosting } from '../state/hosting'
+import { refreshCleanupHint } from '../state/cleanupHints'
 import { checkoutPullRequest } from '../actions/hostingActions'
 import { relativeTime } from '../util/format'
 import { CiIcon, ciSummary } from '../graph/CiBadge'
@@ -320,7 +321,10 @@ function Merge({ repo, remote, pr, onChanged }: { repo: RepoTab; remote: string 
       s.toast({ kind: 'success', title: `Merged #${pr.number}`, message: res.branchDeleted ? `Deleted ${pr.headBranch} on GitHub.` : undefined })
       if (res.warning) s.toast({ kind: 'info', title: 'Merged with a warning', message: res.warning, duration: 8000 })
       void useHosting.getState().loadPrs(repo.path)
-      if (remote) void s.run(`Fetching ${remote}`, (r) => window.git.fetch(r, remote, true), { repo: repo.path })
+      // the fetch prunes the deleted head branch, so its local branch now shows as one to clean up
+      if (remote) void s.run(`Fetching ${remote}`, (r) => window.git.fetch(r, remote, true), { repo: repo.path }).then((ok) => {
+          if (ok) void refreshCleanupHint(repo.path)
+        })
       await onChanged()
     } catch (e) {
       setError((e as Error).message)

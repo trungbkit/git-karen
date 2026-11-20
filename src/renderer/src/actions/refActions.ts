@@ -11,6 +11,7 @@ import { deleteBranchImpact, forcePushImpact, resetImpact } from './impact'
 import { compareRefMenuItems, openCompare, orderedPair } from './compareActions'
 import { summarizeWithAi } from './aiActions'
 import { dismissBehindNotice, noteFetched, upstreamTip } from '../state/autoFetch'
+import { refreshCleanupHint } from '../state/cleanupHints'
 
 const store = () => useStore.getState()
 const git = () => window.git
@@ -118,7 +119,10 @@ export async function checkoutDetached(sha: string, label = shortSha(sha)) {
 export async function fetchAll() {
   const repo = store().activeTab
   const before = upstreamTip(store().repos[repo])
-  if (await store().run('Fetching', (r) => git().fetch(r, undefined, true))) noteFetched(repo, before)
+  if (await store().run('Fetching', (r) => git().fetch(r, undefined, true))) {
+    noteFetched(repo, before)
+    void refreshCleanupHint(repo)
+  }
 }
 
 export type PullMode = 'ff' | 'ff-only' | 'rebase'

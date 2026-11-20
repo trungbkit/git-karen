@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { Ref, Stash, Submodule, Worktree } from '@shared/types'
 import { useStore, type RepoTab } from '../state/store'
+import { refreshCleanupHint, useCleanupHintCount, useCleanupHints } from '../state/cleanupHints'
 import { Icon, type IconName } from '../ui/Icon'
 import { showContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { prompt } from '../ui/dialogs'
@@ -72,6 +73,12 @@ export function LeftPanel({ repo }: { repo: RepoTab }) {
   const s = useStore.getState()
   const branchSort = useStore((st) => st.prefs.branchSort)
   const allCollapsed = useStore((st) => st.prefs.collapsedGroups)
+  const cleanupCount = useCleanupHintCount(repo.path)
+  const refreshed = repo.status !== null
+  // the hint's first scan, once the repository's first refresh brought its branches
+  useEffect(() => {
+    if (refreshed && !useCleanupHints.getState().names[repo.path]) void refreshCleanupHint(repo.path)
+  }, [repo.path, refreshed])
   const saved = allCollapsed[repo.path]
   const f = filter.trim()
   const match = (text: string) => !f || fuzzyMatch(f, text) !== null
@@ -179,6 +186,20 @@ export function LeftPanel({ repo }: { repo: RepoTab }) {
             { label: 'Create branch', onClick: () => void createBranchAt() },
             { label: 'Clean up merged branches…', onClick: () => s.setModal({ kind: 'cleanupBranches' }) }
           ]}
+          badge={
+            cleanupCount > 0 && (
+              <button
+                className="lp-badge"
+                title={`${cleanupCount} local branch${cleanupCount === 1 ? ' is' : 'es are'} merged or had their upstream deleted`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  s.setModal({ kind: 'cleanupBranches' })
+                }}
+              >
+                {cleanupCount} to clean up
+              </button>
+            )
+          }
         >
           {renderTree(localTree, 0)}
           {locals.length === 0 && <Empty>No local branches</Empty>}
@@ -281,6 +302,8 @@ function Section(props: {
   addTitle?: string
   /** Context menu of the section header */
   menu?: MenuItem[]
+  /** Shown after the title, e.g. a hint button */
+  badge?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -295,6 +318,7 @@ function Section(props: {
         <Icon name={props.collapsed ? 'chevron-right' : 'chevron-down'} size={11} />
         <Icon name={props.icon} size={13} />
         <span className="lp-section-title">{props.title}</span>
+        {props.badge}
         <span className="lp-count">{props.count}</span>
         {props.onAdd && (
           <button

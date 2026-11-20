@@ -107,9 +107,18 @@ body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-sel
 .cleanup-base select { flex: 1; min-width: 0; }
 .cleanup-base .btn { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .cleanup-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel); max-height: 300px; min-height: 64px; overflow: auto; }
-.cleanup-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 150px); align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
-.cleanup-row + .cleanup-row { border-top: 1px solid var(--border); }
+.cleanup-group-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 30px; font-size: 11px; font-weight: 600; color: var(--text-secondary); background: var(--bg-panel-2); border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+.cleanup-group + .cleanup-group .cleanup-group-header { border-top: 1px solid var(--border); }
+.cleanup-group-count { font-weight: 500; color: var(--text-disabled); }
+.cleanup-item + .cleanup-item { border-top: 1px solid var(--border); }
+.cleanup-row { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto minmax(0, 170px); align-items: center; gap: 8px; padding: 5px 10px 5px 8px; cursor: pointer; font-size: 12px; user-select: none; }
 .cleanup-row:hover { background: var(--bg-panel-3); }
+.cleanup-row .cleanup-expand { width: 14px; height: 14px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.cleanup-meta.unmerged { color: var(--warning); }
+.cleanup-commits { list-style: none; margin: 0; padding: 2px 10px 6px 54px; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--text-secondary); }
+.cleanup-commits li { display: flex; gap: 8px; min-width: 0; }
+.cleanup-sha { flex: none; font-family: var(--font-mono); color: var(--text-accent); }
+.cleanup-more { font-style: italic; }
 .cleanup-row.locked { cursor: default; }
 .cleanup-row.locked .cleanup-name { color: var(--text-secondary); }
 .cleanup-name { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 500; }

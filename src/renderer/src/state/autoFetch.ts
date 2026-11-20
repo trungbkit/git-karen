@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { useStore, type RepoTab } from './store'
+import { refreshCleanupHint } from './cleanupHints'
 
 /** A fetch brought new upstream commits for the checked-out branch: the graph shows a banner until pulled or dismissed. */
 export interface BehindNotice {
@@ -50,6 +51,7 @@ export function useAutoFetch() {
           await window.git.fetch(path, undefined, true)
           await refresh(path, { log: true })
           noteFetched(path, before)
+          void refreshCleanupHint(path)
         } catch {
           // ignored: auth prompts or offline should not spam toasts
         }

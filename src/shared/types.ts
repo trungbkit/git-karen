@@ -484,6 +484,8 @@ export interface Preferences {
   collapsedGroups: Record<string, Record<string, boolean>>
   /** Saved graph views, by repo path */
   viewPresets: Record<string, ViewPreset[]>
+  /** Clean up merged branches: last base and remote choice, by repo path */
+  cleanup: Record<string, { base?: string; alsoRemote?: boolean }>
   /** Issue links in commit messages, by repo path (absent = provider #123 links only) */
   issueLinks: Record<string, IssueLinkConfig>
   /** Commit composer: Conventional Commits type and scope pickers, and a lint for the format */
@@ -564,6 +566,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   branchSort: 'name',
   collapsedGroups: {},
   viewPresets: {},
+  cleanup: {},
   issueLinks: {},
   conventionalCommits: false,
   commitHistory: {},

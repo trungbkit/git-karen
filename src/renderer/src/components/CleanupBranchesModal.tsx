@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MergedBranch, SquashCheck } from '@shared/types'
+import type { MergedBranch, Preferences, SquashCheck } from '@shared/types'
 import { useActiveRepo, useStore, type RepoTab } from '../state/store'
 import { Modal } from '../ui/Modal'
 import { Icon } from '../ui/Icon'
@@ -11,13 +11,18 @@ import {
   checkoutTarget,
   cleanupRows,
   defaultBase,
+  groupRows,
+  groupSelection,
   isSelected,
+  rangeChoices,
   rememberChecks,
   remoteDeletions,
   splitUpstream,
   squashBatches,
+  type CleanupRow,
   type CleanupStatus
 } from '../actions/cleanup'
+import { markCleanupSeen, refreshCleanupHint } from '../state/cleanupHints'
 import { parseBranchList } from '../smart/text'
 import { relativeTime } from '../util/format'
 
@@ -45,13 +50,23 @@ const STATUS_TITLE: Record<CleanupStatus, string> = {
 type Scan = { kind: 'loading' } | { kind: 'done'; branches: MergedBranch[] } | { kind: 'error'; message: string }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const plural = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
+
+/** The base and remote choice last made in this repo, kept for the next time the dialog opens */
+function remember(path: string, patch: Preferences['cleanup'][string]) {
+  const { prefs, setPrefs } = useStore.getState()
+  void setPrefs({ cleanup: { ...prefs.cleanup, [path]: { ...prefs.cleanup[path], ...patch } } })
+}
 
 function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: string }) {
   const setModal = useStore((s) => s.setModal)
   const protectedBranches = useStore((s) => s.prefs.protectedBranches)
   const candidates = useMemo(() => baseCandidates(repo), [repo])
-  const [base, setBase] = useState<string | null>(() => initialBase ?? defaultBase(repo, candidates))
-  const [alsoRemote, setAlsoRemote] = useState(false)
+  const saved = useStore.getState().prefs.cleanup[repo.path]
+  const [base, setBase] = useState<string | null>(
+    () => initialBase ?? (saved?.base && repo.refs.some((r) => r.fullName === saved.base) ? saved.base : defaultBase(repo, candidates))
+  )
+  const [alsoRemote, setAlsoRemote] = useState(saved?.alsoRemote ?? false)
   const [scan, setScan] = useState<Scan>({ kind: 'loading' })
   const [checks, setChecks] = useState<Record<string, SquashCheck>>({})
   /** Squash checks done out of those needed, while they run */
@@ -61,7 +76,23 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
   /** Choices the user made; branches they did not touch follow the default (merged and squashed ticked) */
   const [picked, setPicked] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  /** Branches whose commits not in the base are listed */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const scanId = useRef(0)
+  /** The row last ticked or unticked, where a shift-click range starts */
+  const anchor = useRef<string | null>(null)
+  /** Whether the click or key press toggling a row held Shift (a checkbox's change event does not say) */
+  const shift = useRef(false)
+  /** The branches on show, recorded as seen for the left panel's hint when the dialog closes */
+  const shown = useRef<string[] | null>(null)
+
+  useEffect(
+    () => () => {
+      if (shown.current) markCleanupSeen(repo.path, shown.current)
+      void refreshCleanupHint(repo.path)
+    },
+    [repo.path]
+  )
 
   useEffect(() => {
     if (!base) return
@@ -115,16 +146,28 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
   const branches = scan.kind === 'done' ? scan.branches : []
   const checking = progress !== null
   const rows = cleanupRows(branches, checks, { checking, currentBranch: repo.status?.branch ?? null, dirty: trackedChanges(repo) })
+  const groups = groupRows(rows)
+  const ordered = groups.flatMap((g) => g.rows)
+  if (scan.kind === 'done') shown.current = rows.map((r) => r.branch.name)
   const selectable = rows.filter((r) => !r.locked)
   const selected = rows.filter((r) => isSelected(r, picked))
   const remoteTargets = alsoRemote ? remoteDeletions(selected) : []
   const keptRemote = alsoRemote ? selected.filter((r) => r.branch.upstream).length - remoteTargets.length : 0
   const baseRef = candidates.find((r) => r.fullName === base)
+  const baseName = baseRef?.name ?? base?.replace(/^refs\/(remotes|heads)\//, '') ?? ''
   const baseRemote = baseRef?.remote ?? null
   const leaving = base && selected.some((r) => r.current) ? checkoutTarget(repo, base) : null
 
   const close = () => !busy && setModal(null)
   const setAll = (on: boolean) => setPicked(Object.fromEntries(selectable.map((r) => [r.branch.name, on])))
+  const setGroup = (group: CleanupRow[], on: boolean) =>
+    setPicked({ ...picked, ...Object.fromEntries(group.filter((r) => !r.locked).map((r) => [r.branch.name, on])) })
+  const toggle = (row: CleanupRow, on: boolean) => {
+    const from = shift.current ? anchor.current : null
+    shift.current = false
+    anchor.current = row.branch.name
+    setPicked({ ...picked, ...(from ? rangeChoices(ordered, from, row.branch.name, on) : {}), [row.branch.name]: on })
+  }
 
   const fetchAndRescan = async () => {
     if (!baseRemote) return
@@ -223,7 +266,12 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
           <div className="field">
             <label htmlFor="kc-cleanup-base">Branches merged into</label>
             <div className="cleanup-base">
-              <select id="kc-cleanup-base" value={base ?? ''} onChange={(e) => setBase(e.target.value)} disabled={!!busy}>
+              <select id="kc-cleanup-base" value={base ?? ''} onChange={(e) => {
+                  setBase(e.target.value)
+                  remember(repo.path, { base: e.target.value })
+                }}
+                disabled={!!busy}
+              >
                 {!base && <option value="">Choose a branch</option>}
                 {candidates.map((r) => (
                   <option key={r.fullName} value={r.fullName}>
@@ -246,27 +294,93 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
             )}
             {scan.kind === 'error' && <div className="cleanup-empty field-error">{scan.message}</div>}
             {scan.kind === 'done' && !checking && rows.length === 0 && <div className="cleanup-empty">No merged branches</div>}
-            {rows.map((row) => {
-              const b = row.branch
-              const tag = row.current ? 'current branch' : b.worktree ? 'in worktree' : null
+            {groups.map((group) => {
+              const state = groupSelection(group.rows, picked)
               return (
-                <label key={b.name} className={`cleanup-row${row.locked ? ' locked' : ''}`} title={row.locked ?? b.summary}>
-                  <input
-                    type="checkbox"
-                    checked={isSelected(row, picked)}
-                    disabled={!!busy || !!row.locked}
-                    onChange={(e) => setPicked({ ...picked, [b.name]: e.target.checked })}
-                  />
-                  <span className="cleanup-name">
-                    <span className="ellipsis">{b.name}</span>
-                    {tag && <span className="cleanup-tag">{tag}</span>}
-                  </span>
-                  <span className={`cleanup-reason ${row.status}`} title={STATUS_TITLE[row.status]}>
-                    {row.status === 'checking' && <span className="spinner small" />}
-                    {STATUS_LABEL[row.status]}
-                  </span>
-                  <span className="cleanup-meta ellipsis">{[b.author, b.date ? relativeTime(b.date) : null].filter(Boolean).join(' · ')}</span>
-                </label>
+                <div key={group.key} className="cleanup-group" role="group" aria-label={group.title}>
+                  <label className="cleanup-group-header">
+                    <input
+                      type="checkbox"
+                      ref={(el) => {
+                        if (el) el.indeterminate = state === 'some'
+                      }}
+                      checked={state === 'all'}
+                      disabled={!!busy || group.rows.every((r) => r.locked)}
+                      onChange={() => setGroup(group.rows, state !== 'all')}
+                    />
+                    <span>{group.title}</span>
+                    <span className="cleanup-group-count">{group.rows.length}</span>
+                  </label>
+                  {group.rows.map((row) => {
+                    const b = row.branch
+                    const tag = row.current ? 'current branch' : b.worktree ? 'in worktree' : null
+                    const unmerged = row.status === 'gone' && row.check ? row.check.unmergedCount : 0
+                    const open = unmerged > 0 && !!expanded[b.name]
+                    const authored = [b.author, b.date ? relativeTime(b.date) : null].filter(Boolean).join(' · ')
+                    return (
+                      <div key={b.name} className="cleanup-item">
+                        <label
+                          className={`cleanup-row${row.locked ? ' locked' : ''}`}
+                          title={row.locked ?? b.summary}
+                          onMouseDown={(e) => (shift.current = e.shiftKey)}
+                          onKeyDown={(e) => (shift.current = e.shiftKey)}
+                        >
+                          {unmerged > 0 ? (
+                            <button
+                              type="button"
+                              className="icon-btn cleanup-expand"
+                              aria-expanded={open}
+                              aria-label={open ? 'Hide commits not in the base branch' : 'Show commits not in the base branch'}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                // a click inside the label would otherwise toggle the checkbox
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setExpanded({ ...expanded, [b.name]: !open })
+                              }}
+                            >
+                              <Icon name={open ? 'chevron-down' : 'chevron-right'} size={11} />
+                            </button>
+                          ) : (
+                            <span className="cleanup-expand" />
+                          )}
+                          <input
+                            type="checkbox"
+                            checked={isSelected(row, picked)}
+                            disabled={!!busy || !!row.locked}
+                            onChange={(e) => toggle(row, e.target.checked)}
+                          />
+                          <span className="cleanup-name">
+                            <span className="ellipsis">{b.name}</span>
+                            {tag && <span className="cleanup-tag">{tag}</span>}
+                          </span>
+                          <span className={`cleanup-reason ${row.status}`} title={STATUS_TITLE[row.status]}>
+                            {row.status === 'checking' && <span className="spinner small" />}
+                            {STATUS_LABEL[row.status]}
+                          </span>
+                          {unmerged > 0 ? (
+                            <span className="cleanup-meta ellipsis unmerged" title={authored}>
+                              {plural(unmerged, 'commit')} not in {baseName}
+                            </span>
+                          ) : (
+                            <span className="cleanup-meta ellipsis">{authored}</span>
+                          )}
+                        </label>
+                        {open && row.check && (
+                          <ul className="cleanup-commits">
+                            {row.check.unmerged.map((c) => (
+                              <li key={c.sha}>
+                                <span className="cleanup-sha">{c.sha.slice(0, 7)}</span>
+                                <span className="ellipsis">{c.summary}</span>
+                              </li>
+                            ))}
+                            {unmerged > row.check.unmerged.length && <li className="cleanup-more">and {unmerged - row.check.unmerged.length} more</li>}
+                          </ul>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               )
             })}
           </div>
@@ -292,7 +406,15 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
           )}
 
           <label className="check">
-            <input type="checkbox" checked={alsoRemote} disabled={!!busy} onChange={(e) => setAlsoRemote(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={alsoRemote}
+              disabled={!!busy}
+              onChange={(e) => {
+                setAlsoRemote(e.target.checked)
+                remember(repo.path, { alsoRemote: e.target.checked })
+              }}
+            />
             Also delete their branches on the remote
           </label>
           {alsoRemote && (

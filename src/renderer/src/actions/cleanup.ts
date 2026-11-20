@@ -84,6 +84,55 @@ export function remoteDeletions(rows: CleanupRow[]): CleanupRow[] {
   return rows.filter((r) => r.branch.upstream && (r.branch.upstreamMerged || (r.status === 'squashed' && r.branch.upstreamMatches)))
 }
 
+export interface CleanupGroup {
+  key: 'merged' | 'squashed' | 'gone'
+  title: string
+  rows: CleanupRow[]
+}
+
+const GROUP_TITLES: [CleanupGroup['key'], string][] = [
+  ['merged', 'Merged'],
+  ['squashed', 'Squash merged'],
+  ['gone', 'Upstream deleted']
+]
+
+/** Rows by why they count as merged (branches still being checked with the upstream-deleted ones), newest commit first. */
+export function groupRows(rows: CleanupRow[]): CleanupGroup[] {
+  return GROUP_TITLES.flatMap(([key, title]) => {
+    const inGroup = rows
+      .filter((r) => (r.status === 'checking' ? 'gone' : r.status) === key)
+      .sort((a, b) => (b.branch.date ?? 0) - (a.branch.date ?? 0) || a.branch.name.localeCompare(b.branch.name))
+    return inGroup.length ? [{ key, title, rows: inGroup }] : []
+  })
+}
+
+/** The tri-state of a group's checkbox, over the rows that can be selected. */
+export function groupSelection(rows: CleanupRow[], picked: Record<string, boolean>): 'all' | 'none' | 'some' {
+  const open = rows.filter((r) => !r.locked)
+  const on = open.filter((r) => isSelected(r, picked)).length
+  return on === 0 ? 'none' : on === open.length ? 'all' : 'some'
+}
+
+/** Choices for every unlocked row from `from` to `to` (either order) of the rows as shown; empty when either is gone. */
+export function rangeChoices(shown: CleanupRow[], from: string, to: string, on: boolean): Record<string, boolean> {
+  const a = shown.findIndex((r) => r.branch.name === from)
+  const b = shown.findIndex((r) => r.branch.name === to)
+  if (a < 0 || b < 0) return {}
+  const range = shown.slice(Math.min(a, b), Math.max(a, b) + 1).filter((r) => !r.locked)
+  return Object.fromEntries(range.map((r) => [r.branch.name, on]))
+}
+
+/** Branches the "to clean up" badge counts: merged or upstream deleted, and not checked out anywhere. */
+export function hintNames(branches: MergedBranch[]): string[] {
+  return branches.filter((b) => (b.reason === 'merged' || b.reason === 'gone') && !b.worktree).map((b) => b.name)
+}
+
+/** The badge only counts branches the dialog has not shown yet, so branches the user chose to keep do not keep it up. */
+export function hintCount(names: string[] | undefined, seen: string[] | undefined): number {
+  const shown = new Set(seen)
+  return (names ?? []).filter((n) => !shown.has(n)).length
+}
+
 /** Branch names to check for squash merges, upstream-deleted ones first, in batches. */
 export function squashBatches(branches: MergedBranch[], size = SQUASH_BATCH): string[][] {
   const names = [...branches.filter((b) => b.reason === 'gone'), ...branches.filter((b) => b.reason === 'unknown')].map((b) => b.name)

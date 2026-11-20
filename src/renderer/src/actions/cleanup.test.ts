@@ -5,7 +5,12 @@ import {
   cachedChecks,
   checkoutTarget,
   cleanupRows,
+  groupRows,
+  groupSelection,
+  hintCount,
+  hintNames,
   isSelected,
+  rangeChoices,
   rememberChecks,
   remoteDeletions,
   selectedByDefault,
@@ -154,5 +159,61 @@ describe('squash check cache', () => {
     // a renamed branch at the same commit keeps its answer under the new name
     expect(cachedChecks('/repo', 'base1', [branch('renamed', 'gone', { sha: 'a-sha' })])).toEqual({ renamed: check('renamed', true) })
     expect(cachedChecks('/repo', undefined, branches)).toEqual({})
+  })
+})
+
+describe('groupRows', () => {
+  it('groups by reason in a fixed order, newest commit first, and leaves out empty groups', () => {
+    const rows = cleanupRows(
+      [
+        branch('old-gone', 'gone', { date: 1 }),
+        branch('old-merged', 'merged', { date: 1 }),
+        branch('checking', 'gone', { date: 3 }),
+        branch('new-merged', 'merged', { date: 5 }),
+        branch('undated', 'merged')
+      ],
+      {},
+      { ...opts, checking: true }
+    )
+    expect(groupRows(rows).map((g) => [g.title, g.rows.map((r) => r.branch.name)])).toEqual([
+      ['Merged', ['new-merged', 'old-merged', 'undated']],
+      ['Upstream deleted', ['checking', 'old-gone']]
+    ])
+  })
+})
+
+describe('group and range selection', () => {
+  const rows = cleanupRows(
+    [branch('a', 'merged'), branch('b', 'merged', { worktree: '/wt' }), branch('c', 'gone'), branch('d', 'merged'), branch('e', 'gone')],
+    { c: check('c', false), e: check('e', false) },
+    opts
+  )
+
+  it('reads a group as all, none or some of its unlocked rows', () => {
+    const merged = rows.filter((r) => r.status === 'merged')
+    expect(groupSelection(merged, {})).toBe('all')
+    expect(groupSelection(merged, { a: false })).toBe('some')
+    expect(groupSelection(merged, { a: false, d: false })).toBe('none')
+    expect(groupSelection(rows.filter((r) => r.status === 'gone'), {})).toBe('none')
+  })
+
+  it('sets every unlocked row between the anchor and the clicked row, in either direction', () => {
+    expect(rangeChoices(rows, 'a', 'd', false)).toEqual({ a: false, c: false, d: false })
+    expect(rangeChoices(rows, 'e', 'c', true)).toEqual({ c: true, d: true, e: true })
+    expect(rangeChoices(rows, 'gone-by-now', 'c', true)).toEqual({})
+  })
+})
+
+describe('cleanup hint', () => {
+  it('counts merged and upstream-deleted branches not checked out anywhere', () => {
+    const names = hintNames([branch('m', 'merged'), branch('g', 'gone'), branch('u', 'unknown'), branch('wt', 'merged', { worktree: '/wt' })])
+    expect(names).toEqual(['m', 'g'])
+  })
+
+  it('leaves out branches the dialog already showed', () => {
+    expect(hintCount(['m', 'g'], undefined)).toBe(2)
+    expect(hintCount(['m', 'g'], ['m', 'g', 'x'])).toBe(0)
+    expect(hintCount(['m', 'g', 'new'], ['m', 'g'])).toBe(1)
+    expect(hintCount(undefined, ['m'])).toBe(0)
   })
 })
