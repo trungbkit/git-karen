@@ -1173,30 +1173,26 @@ async fn head_diff_combines_staged_and_unstaged_changes() {
 
 // ---------------------------------------------------------------------- merged branch cleanup
 
+/// A branch off main with two commits to `file`, leaving main checked out.
+async fn two_commit_branch(repo: &str, name: &str, file: &str) {
+    sh(repo, &["checkout", "-q", "-b", name, "main"]).await;
+    commit_file(repo, file, "1\n", &format!("{name} 1")).await;
+    commit_file(repo, file, "1\n2\n", &format!("{name} 2")).await;
+    sh(repo, &["checkout", "-q", "main"]).await;
+}
+
 #[tokio::test]
-async fn finds_merged_squashed_and_gone_branches_and_protects_the_rest() {
+async fn lists_cleanup_candidates_and_protects_the_rest() {
     let (svc, _d, repo) = setup().await;
     commit_file(&repo, "base.txt", "base\n", "base").await;
     let (_rd, remote) = temp_dir("karen-remote-");
     sh(&remote, &["init", "-q", "--bare"]).await;
     svc.add_remote(&repo, "origin", &remote).await.unwrap();
-    let branch = |name: &'static str, file: &'static str| {
-        let repo = repo.clone();
-        async move {
-            sh(&repo, &["checkout", "-q", "-b", name, "main"]).await;
-            commit_file(&repo, file, "1\n", &format!("{name} 1")).await;
-            commit_file(&repo, file, "1\n2\n", &format!("{name} 2")).await;
-            sh(&repo, &["checkout", "-q", "main"]).await;
-        }
-    };
-    branch("merged", "m.txt").await;
-    branch("squashed", "s.txt").await;
-    branch("rebased", "r.txt").await;
-    branch("gone", "g.txt").await;
-    branch("open", "o.txt").await;
-    branch("busy", "b.txt").await;
+    for (name, file) in [("merged", "m.txt"), ("squashed", "s.txt"), ("rebased", "r.txt"), ("gone", "g.txt"), ("open", "o.txt"), ("busy", "b.txt")] {
+        two_commit_branch(&repo, name, file).await;
+    }
     sh(&repo, &["branch", "develop", "main"]).await;
-    branch("tracks-develop", "t.txt").await;
+    two_commit_branch(&repo, "tracks-develop", "t.txt").await;
     // merge "merged" normally, squash "squashed", replay "rebased" commit by commit
     sh(&repo, &["merge", "-q", "--no-ff", "-m", "merge", "merged"]).await;
     sh(&repo, &["merge", "-q", "--squash", "squashed"]).await;
@@ -1213,38 +1209,94 @@ async fn finds_merged_squashed_and_gone_branches_and_protects_the_rest() {
     sh(&repo, &["fetch", "-q", "--prune", "origin"]).await;
     // "busy" is merged but checked out in another worktree
     sh(&repo, &["merge", "-q", "--no-ff", "-m", "merge busy", "busy"]).await;
-    sh(&repo, &["push", "-q", "origin", "main"]).await;
+    // "staging" is a long-lived branch whose tip happens to be in main; "tracks-staging" follows it
+    sh(&repo, &["branch", "staging", "main"]).await;
+    sh(&repo, &["branch", "tracks-staging", "main"]).await;
+    sh(&repo, &["push", "-q", "origin", "main", "staging"]).await;
+    sh(&repo, &["branch", "-q", "-u", "origin/staging", "tracks-staging"]).await;
     let (_wd, wt) = temp_dir("karen-wt-");
     sh(&repo, &["worktree", "add", "-q", &format!("{wt}/busy"), "busy"]).await;
 
     let base = "refs/remotes/origin/main";
-    let plain = svc.merged_branches(&repo, base, false).await.unwrap();
     let names = |v: &[MergedBranch]| v.iter().map(|b| (b.name.clone(), b.reason)).collect::<Vec<_>>();
-    assert_eq!(names(&plain), [("gone".to_string(), "gone"), ("merged".to_string(), "merged"), ("tracks-develop".to_string(), "merged")]);
-    assert!(plain[0].gone && plain[0].upstream.is_none());
-    // origin/develop is merged too, but a protected branch is never offered for deletion on the remote
-    assert_eq!(plain[2].upstream.as_deref(), Some("refs/remotes/origin/develop"));
-    assert!(!plain[2].upstream_merged);
-
-    let all = svc.merged_branches(&repo, base, true).await.unwrap();
+    let find = |v: &[MergedBranch], name: &str| v.iter().find(|b| b.name == name).cloned().unwrap();
+    let plain = svc.merged_branches(&repo, base, MergedBranchOptions::default()).await.unwrap();
     assert_eq!(
-        names(&all),
+        names(&plain),
         [
+            ("busy".to_string(), "merged"),
             ("gone".to_string(), "gone"),
             ("merged".to_string(), "merged"),
-            ("rebased".to_string(), "squashed"),
-            ("squashed".to_string(), "squashed"),
-            ("tracks-develop".to_string(), "merged")
+            ("open".to_string(), "unknown"),
+            ("rebased".to_string(), "unknown"),
+            ("squashed".to_string(), "unknown"),
+            ("staging".to_string(), "merged"),
+            ("tracks-develop".to_string(), "merged"),
+            ("tracks-staging".to_string(), "merged")
         ]
     );
-    let squashed = all.iter().find(|b| b.name == "squashed").unwrap();
+    assert!(find(&plain, "busy").worktree.is_some_and(|w| w.ends_with("/busy")));
+    assert!(find(&plain, "merged").worktree.is_none());
+    let gone = find(&plain, "gone");
+    assert!(gone.gone && gone.upstream.is_none() && !gone.upstream_matches);
+    // origin/develop is merged too, but a protected branch is never offered for deletion on the remote
+    let tracks_develop = find(&plain, "tracks-develop");
+    assert_eq!(tracks_develop.upstream.as_deref(), Some("refs/remotes/origin/develop"));
+    assert!(!tracks_develop.upstream_merged && !tracks_develop.upstream_matches);
+    let squashed = find(&plain, "squashed");
     assert_eq!(squashed.upstream.as_deref(), Some("refs/remotes/origin/squashed"));
-    assert!(squashed.upstream_merged, "the upstream is the squashed branch itself");
-    assert!(svc.merged_branches(&repo, "refs/remotes/origin/nope", false).await.is_err());
+    assert!(!squashed.upstream_merged && squashed.upstream_matches, "the upstream is the branch itself");
+    assert!(find(&plain, "tracks-staging").upstream_merged);
+
+    // the user's protected branches are neither offered nor deleted on the remote
+    let opts = MergedBranchOptions { protected: vec!["staging".into()] };
+    let guarded = svc.merged_branches(&repo, base, opts).await.unwrap();
+    assert!(guarded.iter().all(|b| b.name != "staging"));
+    let tracks_staging = find(&guarded, "tracks-staging");
+    assert!(!tracks_staging.upstream_merged && !tracks_staging.upstream_matches);
+
+    // the checked-out branch is listed, with the worktree it is checked out in
+    sh(&repo, &["checkout", "-q", "merged"]).await;
+    let current = svc.merged_branches(&repo, base, MergedBranchOptions::default()).await.unwrap();
+    assert!(find(&current, "merged").worktree.is_some());
+    sh(&repo, &["checkout", "-q", "main"]).await;
+    assert!(svc.merged_branches(&repo, "refs/remotes/origin/nope", MergedBranchOptions::default()).await.is_err());
 
     let res = svc.delete_branches(&repo, vec!["merged".into(), "main".into(), "squashed".into()]).await.unwrap();
     assert_eq!(res.iter().map(|d| (d.name.as_str(), d.error.is_some())).collect::<Vec<_>>(), [("merged", false), ("main", true), ("squashed", false)]);
     svc.delete_remote_branches(&repo, "origin", vec!["squashed".into(), "open".into()]).await.unwrap();
-    assert_eq!(sh(&remote, &["branch", "--format=%(refname:short)"]).await, "develop\nmain");
+    assert_eq!(sh(&remote, &["branch", "--format=%(refname:short)"]).await, "develop\nmain\nstaging");
     assert!(svc.delete_remote_branches(&repo, "origin", vec!["--force".into()]).await.is_err());
+}
+
+#[tokio::test]
+async fn checks_squash_and_rebase_merges() {
+    let (svc, _d, repo) = setup().await;
+    commit_file(&repo, "base.txt", "base\n", "base").await;
+    for (name, file) in [("squashed", "s.txt"), ("rewritten", "w.txt"), ("rebased", "r.txt"), ("gone", "g.txt"), ("open", "o.txt")] {
+        two_commit_branch(&repo, name, file).await;
+    }
+    // "squashed" is squash merged, then the base changes another file
+    sh(&repo, &["merge", "-q", "--squash", "squashed"]).await;
+    sh(&repo, &["commit", "-q", "-m", "squash s"]).await;
+    commit_file(&repo, "base.txt", "base\nmore\n", "other file").await;
+    // "rewritten" is squash merged, then the base rewrites the very lines it added: merging it again conflicts,
+    // so only the patch comparison finds it
+    sh(&repo, &["merge", "-q", "--squash", "rewritten"]).await;
+    sh(&repo, &["commit", "-q", "-m", "squash w"]).await;
+    commit_file(&repo, "w.txt", "1\nTWO\n", "rewrite w").await;
+    sh(&repo, &["cherry-pick", "main..rebased"]).await;
+    let merge = ["merge-tree", "--write-tree", "--no-messages", "main", "rewritten"].map(String::from);
+    assert!(git(Path::new(&repo), &merge, Opts::read()).await.is_err());
+
+    let names = ["squashed", "rewritten", "rebased", "gone", "open"].map(String::from).to_vec();
+    let res = svc.check_squash_merged(&repo, "refs/heads/main", names).await.unwrap();
+    let flags = res.iter().map(|c| (c.name.as_str(), c.squashed)).collect::<Vec<_>>();
+    assert_eq!(flags, [("squashed", true), ("rewritten", true), ("rebased", true), ("gone", false), ("open", false)]);
+    assert!(res[0].unmerged.is_empty() && res[0].unmerged_count == 0);
+    let gone = &res[3];
+    assert_eq!(gone.unmerged_count, 2);
+    assert_eq!(gone.unmerged.iter().map(|c| c.summary.as_str()).collect::<Vec<_>>(), ["gone 2", "gone 1"]);
+    assert_eq!(gone.unmerged[0].sha, sh(&repo, &["rev-parse", "gone"]).await);
+    assert!(svc.check_squash_merged(&repo, "refs/heads/main", vec!["--force".into()]).await.is_err());
 }

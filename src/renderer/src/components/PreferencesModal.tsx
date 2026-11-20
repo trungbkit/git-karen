@@ -588,7 +588,7 @@ export function PreferencesModal() {
               <Field label="Default pull request targets" hint="Comma-separated branches the smart commit opens PRs against.">
                 {text('smartCommitTargets', 'uat,main')}
               </Field>
-              <Field label="Protected branches" hint="Comma-separated. Smart commit never merges into these locally; they are merged through GitHub.">
+              <Field label="Protected branches" hint="Comma-separated. Smart commit never merges into these locally; they are merged through GitHub. Clean up merged branches never offers them.">
                 {text('protectedBranches', 'main,master,uat,staging')}
               </Field>
             </>

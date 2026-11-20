@@ -90,7 +90,7 @@ fn home() -> PathBuf {
 }
 
 /// The remote whose name is the longest prefix of `short` ("origin/feature/x" -> "origin").
-fn match_remote(remotes: &[String], short: &str) -> Option<String> {
+pub(super) fn match_remote(remotes: &[String], short: &str) -> Option<String> {
     remotes.iter().filter(|r| short.starts_with(&format!("{r}/"))).max_by_key(|r| r.len()).cloned()
 }
 
@@ -195,8 +195,9 @@ impl GitService {
                     "mergedBranches" => ret!(self.merged_branches(
                         r,
                         &a.get::<String>(1)?,
-                        a.get::<Option<bool>>(2)?.unwrap_or(false)
+                        a.get::<Option<MergedBranchOptions>>(2)?.unwrap_or_default()
                     )),
+                    "checkSquashMerged" => ret!(self.check_squash_merged(r, &a.get::<String>(1)?, a.get(2)?)),
                     "deleteBranches" => ret!(self.delete_branches(r, a.get(1)?)),
                     "deleteRemoteBranches" => {
                         ret!(self.delete_remote_branches(r, &a.get::<String>(1)?, a.get(2)?))

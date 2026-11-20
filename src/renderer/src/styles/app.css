@@ -110,11 +110,17 @@ body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-sel
 .cleanup-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 150px); align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
 .cleanup-row + .cleanup-row { border-top: 1px solid var(--border); }
 .cleanup-row:hover { background: var(--bg-panel-3); }
-.cleanup-name { font-weight: 500; }
-.cleanup-reason { font-size: 11px; padding: 0 6px; height: 18px; line-height: 16px; border-radius: 9px; border: 1px solid currentColor; white-space: nowrap; }
+.cleanup-row.locked { cursor: default; }
+.cleanup-row.locked .cleanup-name { color: var(--text-secondary); }
+.cleanup-name { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 500; }
+.cleanup-tag { flex: none; font-size: 11px; font-weight: 400; color: var(--text-secondary); padding: 0 5px; border-radius: 4px; background: var(--bg-panel-3); }
+.cleanup-reason { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 0 6px; height: 18px; line-height: 16px; border-radius: 9px; border: 1px solid currentColor; white-space: nowrap; }
 .cleanup-reason.merged { color: var(--success); }
 .cleanup-reason.squashed { color: var(--info); }
 .cleanup-reason.gone { color: var(--warning); }
+.cleanup-reason.checking { color: var(--text-secondary); }
+.cleanup-progress { display: flex; align-items: center; gap: 6px; }
+.cleanup-footer-hint { margin-right: auto; align-self: center; }
 .cleanup-meta { color: var(--text-secondary); text-align: right; }
 .cleanup-empty { display: flex; align-items: center; gap: 8px; padding: 12px; color: var(--text-secondary); font-size: 12px; }
 .cleanup-bulk { display: flex; align-items: center; gap: 6px; }

@@ -21,6 +21,7 @@ Each feature below has unit or integration tests, but nobody has clicked through
 - Drag and drop of files and folders, the "behind" banner after auto-fetch, branch prefix suggestions.
 - Themes (Nord, Solarized, custom accent, following the system theme), compact density, skeletons, progress bars, error toasts with action buttons, focus rings, `prefers-reduced-motion`.
 - Clone progress with a large repository.
+- Clean up merged branches on a repository that uses squash merges: squash-merged branches turn ticked as the checks come in, protected branches never show, and deleting the checked-out branch switches to the base first.
 
 ## Measurements still to take
 - Word-diff cost on a 5,000-line diff inside the app's WKWebView (so far it has only been measured in Chromium).

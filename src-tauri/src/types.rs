@@ -475,14 +475,14 @@ pub struct BranchImpact {
     pub orphaned: u32,
 }
 
-/// A local branch whose work is already in the base branch it was compared with.
+/// A local branch that may be cleaned up, with what a quick scan against the base branch found.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MergedBranch {
     pub name: String,
     pub sha: String,
-    /// "merged" (its tip is in the base), "squashed" (its changes reached the base as other commits) or
-    /// "gone" (only its upstream was deleted; nothing shows its work reached the base)
+    /// "merged" (its tip is in the base), "gone" (its upstream was deleted; not known whether its work reached the
+    /// base) or "unknown" (neither; only a squash check can tell)
     pub reason: &'static str,
     /// Its upstream was deleted on the remote
     pub gone: bool,
@@ -491,12 +491,43 @@ pub struct MergedBranch {
     pub upstream: Option<String>,
     /// Its upstream holds nothing the base lacks, so deleting it on the remote loses no work
     pub upstream_merged: bool,
+    /// Its upstream may be deleted (not the base, not protected) and points at the same commit as the branch, so
+    /// once the branch counts as squash merged its upstream does too
+    pub upstream_matches: bool,
+    /// Path of the worktree that has it checked out
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct MergedBranchOptions {
+    /// Branch names never offered, besides the built-in ones (the user's protected branches)
+    #[serde(default)]
+    pub protected: Vec<String>,
+}
+
+/// Whether a branch's changes reached the base branch as other commits (a squash or rebase merge).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SquashCheck {
+    pub name: String,
+    pub squashed: bool,
+    /// Commits of the branch whose changes are not in the base, newest first, at most 20
+    pub unmerged: Vec<UnmergedCommit>,
+    /// Total number of such commits
+    pub unmerged_count: u32,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct UnmergedCommit {
+    pub sha: String,
+    pub summary: String,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]

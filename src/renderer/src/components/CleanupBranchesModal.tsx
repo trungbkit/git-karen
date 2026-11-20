@@ -1,9 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MergedBranch, Ref } from '@shared/types'
+import type { MergedBranch, SquashCheck } from '@shared/types'
 import { useActiveRepo, useStore, type RepoTab } from '../state/store'
 import { Modal } from '../ui/Modal'
 import { Icon } from '../ui/Icon'
 import { offerUndo } from '../actions/undo'
+import { trackedChanges } from '../actions/refActions'
+import {
+  baseCandidates,
+  cachedChecks,
+  checkoutTarget,
+  cleanupRows,
+  defaultBase,
+  isSelected,
+  rememberChecks,
+  remoteDeletions,
+  splitUpstream,
+  squashBatches,
+  type CleanupStatus
+} from '../actions/cleanup'
+import { parseBranchList } from '../smart/text'
 import { relativeTime } from '../util/format'
 
 export function CleanupBranchesModal() {
@@ -13,53 +28,35 @@ export function CleanupBranchesModal() {
   return <CleanupForm repo={repo} initialBase={modal.base} />
 }
 
-const REASON_LABEL: Record<MergedBranch['reason'], string> = {
+const STATUS_LABEL: Record<CleanupStatus, string> = {
   merged: 'merged',
   squashed: 'squash merged',
-  gone: 'upstream deleted'
+  gone: 'upstream deleted',
+  checking: 'checking…'
 }
 
-const REASON_TITLE: Record<MergedBranch['reason'], string> = {
+const STATUS_TITLE: Record<CleanupStatus, string> = {
   merged: 'Its last commit is in the base branch',
   squashed: 'Its changes are in the base branch as other commits (squash or rebase merge)',
-  gone: 'Its branch on the remote was deleted, but its commits were not found in the base branch'
-}
-
-/** Remote branches to compare with: each remote's default branch first, then the rest by name. */
-function baseCandidates(repo: RepoTab): Ref[] {
-  return repo.refs
-    .filter((r) => r.type === 'remote')
-    .sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name))
-}
-
-function defaultBase(repo: RepoTab, candidates: Ref[]): string | null {
-  const origin = repo.remotes.find((r) => r.name === 'origin')?.name ?? repo.remotes[0]?.name
-  const pick =
-    candidates.find((r) => r.isDefault && r.remote === origin) ??
-    candidates.find((r) => r.isDefault) ??
-    candidates.find((r) => r.name === `${origin}/main` || r.name === `${origin}/master`)
-  return pick?.fullName ?? null
-}
-
-/** The remote an upstream such as "refs/remotes/origin/feature/x" belongs to, and its branch name there. */
-function splitUpstream(repo: RepoTab, upstream: string): { remote: string; branch: string } | null {
-  const short = upstream.replace(/^refs\/remotes\//, '')
-  const remote = repo.remotes
-    .map((r) => r.name)
-    .filter((r) => short.startsWith(`${r}/`))
-    .sort((a, b) => b.length - a.length)[0]
-  return remote ? { remote, branch: short.slice(remote.length + 1) } : null
+  gone: 'Its branch on the remote was deleted, but some of its commits are not in the base branch',
+  checking: 'Its branch on the remote was deleted; checking whether it was squash merged'
 }
 
 type Scan = { kind: 'loading' } | { kind: 'done'; branches: MergedBranch[] } | { kind: 'error'; message: string }
 
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
 function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: string }) {
   const setModal = useStore((s) => s.setModal)
+  const protectedBranches = useStore((s) => s.prefs.protectedBranches)
   const candidates = useMemo(() => baseCandidates(repo), [repo])
   const [base, setBase] = useState<string | null>(() => initialBase ?? defaultBase(repo, candidates))
-  const [squashed, setSquashed] = useState(false)
   const [alsoRemote, setAlsoRemote] = useState(false)
   const [scan, setScan] = useState<Scan>({ kind: 'loading' })
+  const [checks, setChecks] = useState<Record<string, SquashCheck>>({})
+  /** Squash checks done out of those needed, while they run */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [checkError, setCheckError] = useState<string | null>(null)
   const [rescan, setRescan] = useState(0)
   /** Choices the user made; branches they did not touch follow the default (merged and squashed ticked) */
   const [picked, setPicked] = useState<Record<string, boolean>>({})
@@ -69,23 +66,65 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
   useEffect(() => {
     if (!base) return
     const id = ++scanId.current
+    const live = () => id === scanId.current
     setScan({ kind: 'loading' })
-    window.git.mergedBranches(repo.path, base, squashed).then(
-      (branches) => id === scanId.current && setScan({ kind: 'done', branches }),
-      (e: unknown) => id === scanId.current && setScan({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
-    )
-  }, [repo.path, base, squashed, rescan])
+    setChecks({})
+    setProgress(null)
+    setCheckError(null)
+    void (async () => {
+      let branches: MergedBranch[]
+      try {
+        branches = await window.git.mergedBranches(repo.path, base, { protected: parseBranchList(protectedBranches) })
+      } catch (e) {
+        if (live()) setScan({ kind: 'error', message: message(e) })
+        return
+      }
+      if (!live()) return
+      const baseSha = useStore.getState().repos[repo.path]?.refs.find((r) => r.fullName === base)?.sha
+      const known = cachedChecks(repo.path, baseSha, branches)
+      setScan({ kind: 'done', branches })
+      setChecks(known)
+      const total = squashBatches(branches).flat().length
+      const batches = squashBatches(branches.filter((b) => !known[b.name]))
+      let done = total - batches.flat().length
+      if (!batches.length) return
+      setProgress({ done, total })
+      for (const names of batches) {
+        let res: SquashCheck[]
+        try {
+          res = await window.git.checkSquashMerged(repo.path, base, names)
+        } catch (e) {
+          if (live()) {
+            setCheckError(message(e))
+            setProgress(null)
+          }
+          return
+        }
+        if (!live()) return
+        rememberChecks(repo.path, baseSha, branches, res)
+        done += names.length
+        setChecks((c) => ({ ...c, ...Object.fromEntries(res.map((r) => [r.name, r])) }))
+        setProgress(done < total ? { done, total } : null)
+      }
+    })()
+    return () => {
+      scanId.current++
+    }
+  }, [repo.path, base, protectedBranches, rescan])
 
   const branches = scan.kind === 'done' ? scan.branches : []
-  const isOn = (b: MergedBranch) => picked[b.name] ?? b.reason !== 'gone'
-  const selected = branches.filter(isOn)
-  const remoteTargets = alsoRemote ? selected.filter((b) => b.upstream && b.upstreamMerged) : []
-  const keptRemote = alsoRemote ? selected.filter((b) => b.upstream && !b.upstreamMerged).length : 0
+  const checking = progress !== null
+  const rows = cleanupRows(branches, checks, { checking, currentBranch: repo.status?.branch ?? null, dirty: trackedChanges(repo) })
+  const selectable = rows.filter((r) => !r.locked)
+  const selected = rows.filter((r) => isSelected(r, picked))
+  const remoteTargets = alsoRemote ? remoteDeletions(selected) : []
+  const keptRemote = alsoRemote ? selected.filter((r) => r.branch.upstream).length - remoteTargets.length : 0
   const baseRef = candidates.find((r) => r.fullName === base)
   const baseRemote = baseRef?.remote ?? null
+  const leaving = base && selected.some((r) => r.current) ? checkoutTarget(repo, base) : null
 
   const close = () => !busy && setModal(null)
-  const setAll = (on: boolean) => setPicked(Object.fromEntries(branches.map((b) => [b.name, on])))
+  const setAll = (on: boolean) => setPicked(Object.fromEntries(selectable.map((r) => [r.branch.name, on])))
 
   const fetchAndRescan = async () => {
     if (!baseRemote) return
@@ -98,9 +137,9 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
   const submit = async () => {
     if (!selected.length || busy) return
     setBusy('Deleting')
-    const locals = selected.map((b) => ({ name: b.name, sha: b.sha, upstream: b.upstream }))
+    const locals = selected.map(({ branch: b }) => ({ name: b.name, sha: b.sha, upstream: b.upstream }))
     // remote branches to delete, with the commit each pointed at so undo can push it back
-    const remotes = remoteTargets.flatMap((b) => {
+    const remotes = remoteTargets.flatMap(({ branch: b }) => {
       const target = splitUpstream(repo, b.upstream!)
       const sha = repo.refs.find((r) => r.fullName === b.upstream)?.sha
       return target && sha ? [{ ...target, sha }] : []
@@ -109,6 +148,8 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
     let deletedRemote: typeof remotes = []
     const count = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 'es'}`
     const ok = await useStore.getState().run('Cleaning up branches', async (r) => {
+      // git refuses to delete the checked-out branch; when switching fails, nothing is deleted
+      if (leaving) await (leaving.remoteRef ? window.git.checkoutRemote(r, leaving.remoteRef) : window.git.checkout(r, leaving.name))
       const res = await window.git.deleteBranches(
         r,
         locals.map((b) => b.name)
@@ -165,6 +206,7 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
       width={620}
       footer={
         <>
+          {leaving && <span className="field-hint cleanup-footer-hint">Switches to {leaving.name} before deleting.</span>}
           <button className="btn" onClick={close} disabled={!!busy}>
             Cancel
           </button>
@@ -195,35 +237,46 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
               </button>
             </div>
           </div>
-          <label className="check" title="Finds branches merged with Squash and merge or Rebase and merge. Compares the patches of every branch, which takes longer.">
-            <input type="checkbox" checked={squashed} disabled={!!busy} onChange={(e) => setSquashed(e.target.checked)} />
-            Also find squash and rebase merges (slower)
-          </label>
 
           <div className="cleanup-list" role="group" aria-label="Branches to delete">
-            {scan.kind === 'loading' && (
+            {(scan.kind === 'loading' || (checking && rows.length === 0)) && (
               <div className="cleanup-empty">
                 <span className="spinner small" /> Looking for merged branches…
               </div>
             )}
             {scan.kind === 'error' && <div className="cleanup-empty field-error">{scan.message}</div>}
-            {scan.kind === 'done' && branches.length === 0 && (
-              <div className="cleanup-empty">No merged branches{squashed ? '' : '. Squash merges are not checked; turn that on above to find them.'}</div>
-            )}
-            {branches.map((b) => (
-              <label key={b.name} className="cleanup-row" title={b.summary}>
-                <input type="checkbox" checked={isOn(b)} disabled={!!busy} onChange={(e) => setPicked({ ...picked, [b.name]: e.target.checked })} />
-                <span className="cleanup-name ellipsis">{b.name}</span>
-                <span className={`cleanup-reason ${b.reason}`} title={REASON_TITLE[b.reason]}>
-                  {REASON_LABEL[b.reason]}
-                </span>
-                <span className="cleanup-meta ellipsis">
-                  {[b.author, b.date ? relativeTime(b.date) : null].filter(Boolean).join(' · ')}
-                </span>
-              </label>
-            ))}
+            {scan.kind === 'done' && !checking && rows.length === 0 && <div className="cleanup-empty">No merged branches</div>}
+            {rows.map((row) => {
+              const b = row.branch
+              const tag = row.current ? 'current branch' : b.worktree ? 'in worktree' : null
+              return (
+                <label key={b.name} className={`cleanup-row${row.locked ? ' locked' : ''}`} title={row.locked ?? b.summary}>
+                  <input
+                    type="checkbox"
+                    checked={isSelected(row, picked)}
+                    disabled={!!busy || !!row.locked}
+                    onChange={(e) => setPicked({ ...picked, [b.name]: e.target.checked })}
+                  />
+                  <span className="cleanup-name">
+                    <span className="ellipsis">{b.name}</span>
+                    {tag && <span className="cleanup-tag">{tag}</span>}
+                  </span>
+                  <span className={`cleanup-reason ${row.status}`} title={STATUS_TITLE[row.status]}>
+                    {row.status === 'checking' && <span className="spinner small" />}
+                    {STATUS_LABEL[row.status]}
+                  </span>
+                  <span className="cleanup-meta ellipsis">{[b.author, b.date ? relativeTime(b.date) : null].filter(Boolean).join(' · ')}</span>
+                </label>
+              )
+            })}
           </div>
-          {branches.length > 1 && (
+          {progress && (
+            <span className="field-hint cleanup-progress">
+              <span className="spinner small" /> Checking squash merges… {progress.done}/{progress.total}
+            </span>
+          )}
+          {checkError && <span className="field-error">Could not check for squash merges: {checkError}</span>}
+          {selectable.length > 1 && (
             <div className="cleanup-bulk">
               <button className="btn ghost small" onClick={() => setAll(true)} disabled={!!busy}>
                 Select all
@@ -234,8 +287,8 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
               <span className="field-hint">{selected.length} selected</span>
             </div>
           )}
-          {branches.some((b) => b.reason === 'gone') && (
-            <span className="field-warning">Branches whose upstream was deleted are not selected: their commits were not found in the base branch.</span>
+          {!checking && rows.some((r) => r.status === 'gone') && (
+            <span className="field-warning">Branches whose upstream was deleted are not selected when they have commits that are not in the base branch.</span>
           )}
 
           <label className="check">
@@ -245,7 +298,7 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
           {alsoRemote && (
             <span className="field-hint">
               {remoteTargets.length
-                ? `Deletes ${remoteTargets.map((b) => b.upstream!.replace(/^refs\/remotes\//, '')).join(', ')}.`
+                ? `Deletes ${remoteTargets.map((r) => r.branch.upstream!.replace(/^refs\/remotes\//, '')).join(', ')}.`
                 : 'None of the selected branches has a merged branch on the remote.'}
               {keptRemote > 0 && ` Keeps ${keptRemote} remote branch${keptRemote === 1 ? '' : 'es'} with commits that are not in the base branch, or that are protected.`}
             </span>

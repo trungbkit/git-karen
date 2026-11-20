@@ -279,22 +279,36 @@ export interface DiscardImpact {
   binary: number
 }
 
-/** A local branch whose work is already in the base branch it was compared with (see GitApi.mergedBranches). */
+/** A local branch that may be cleaned up, with what a quick scan against the base branch found (see GitApi.mergedBranches). */
 export interface MergedBranch {
   name: string
   sha: string
-  /** merged: its tip is in the base; squashed: its changes reached the base as other commits;
-   *  gone: only its upstream was deleted, nothing shows its work reached the base */
-  reason: 'merged' | 'squashed' | 'gone'
+  /** merged: its tip is in the base; gone: its upstream was deleted, not known whether its work reached the base;
+   *  unknown: neither, only a squash check (GitApi.checkSquashMerged) can tell */
+  reason: 'merged' | 'gone' | 'unknown'
   /** Its upstream was deleted on the remote */
   gone: boolean
   /** Full name of its upstream, when that still exists */
   upstream?: string
   /** Its upstream holds nothing the base lacks, so deleting it on the remote loses no work */
   upstreamMerged: boolean
+  /** Its upstream may be deleted and points at the same commit, so it counts as merged once the branch is squash merged */
+  upstreamMatches: boolean
+  /** Path of the worktree that has it checked out */
+  worktree?: string
   date?: number
   author?: string
   summary?: string
+}
+
+/** Whether a branch's changes reached the base branch as other commits (squash or rebase merge). */
+export interface SquashCheck {
+  name: string
+  squashed: boolean
+  /** Commits of the branch whose changes are not in the base, newest first, at most 20 */
+  unmerged: { sha: string; summary: string }[]
+  /** Total number of such commits */
+  unmergedCount: number
 }
 
 export interface BranchDeletion {
@@ -461,7 +475,8 @@ export interface Preferences {
   rightPanelWidth: number
   /** Smart commit: comma-separated branches to open pull requests against */
   smartCommitTargets: string
-  /** Smart commit: comma-separated branches that are only merged through the hosting UI, never locally */
+  /** Comma-separated branches that smart commit only merges through the hosting UI, never locally, and that
+   *  clean up merged branches never offers */
   protectedBranches: string
   /** Order of branches in the left panel: by name, or most recent commit first */
   branchSort: 'name' | 'date'
@@ -692,9 +707,12 @@ export interface GitApi {
   createBranch(repo: string, name: string, startPoint?: string, checkout?: boolean): Promise<void>
   deleteBranch(repo: string, name: string, force?: boolean): Promise<void>
   deleteRemoteBranch(repo: string, remote: string, name: string): Promise<void>
-  /** Local branches whose work is already in `base` (e.g. "refs/remotes/origin/main"); `squashed` also looks for
-   *  squash and rebase merges, which is slower. Protected, base and checked-out branches are never listed. */
-  mergedBranches(repo: string, base: string, squashed?: boolean): Promise<MergedBranch[]>
+  /** Every local branch that may be cleaned up, compared with `base` (e.g. "refs/remotes/origin/main"): merged,
+   *  upstream deleted, or unknown until checked for squash merges. Built-in, Gitflow, base and `opts.protected`
+   *  branches are never listed; checked-out branches come with their worktree. */
+  mergedBranches(repo: string, base: string, opts?: { protected?: string[] }): Promise<MergedBranch[]>
+  /** Whether each local branch of `names` reached `base` through a squash or rebase merge, in the order of `names` */
+  checkSquashMerged(repo: string, base: string, names: string[]): Promise<SquashCheck[]>
   /** Force-delete local branches; one failure does not stop the others */
   deleteBranches(repo: string, names: string[]): Promise<BranchDeletion[]>
   deleteRemoteBranches(repo: string, remote: string, names: string[]): Promise<void>
