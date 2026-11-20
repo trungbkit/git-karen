@@ -103,6 +103,8 @@ export type ModalState =
   | { kind: 'pullRequest'; number: number; tab?: 'conversation' | 'checks' | 'merge' }
   /** The log of a GitHub Actions job */
   | { kind: 'jobLog'; jobId: number }
+  /** base: remote branch to compare with (full ref name); the remote's default branch when absent */
+  | { kind: 'cleanupBranches'; base?: string }
   /** Let the AI group all uncommitted changes into several commits, made one after another */
   | { kind: 'splitCommit' }
 

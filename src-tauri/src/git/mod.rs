@@ -1,3 +1,4 @@
+pub mod cleanup;
 pub mod committing;
 pub mod daily;
 pub mod exec;

@@ -16,6 +16,7 @@ export const COMMANDS = {
   switchBranch: 'view:switchBranch',
   openWorkspace: 'view:workspace',
   createBranch: 'repo:createBranch',
+  cleanupBranches: 'repo:cleanupBranches',
   stash: 'repo:stash',
   popStash: 'repo:popStash',
   undo: 'repo:undo',

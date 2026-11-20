@@ -102,6 +102,23 @@ body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-sel
 .skeleton { height: 12px; border-radius: 4px; background: linear-gradient(90deg, var(--bg-panel-3) 25%, var(--border-strong) 50%, var(--bg-panel-3) 75%); background-size: 200% 100%; animation: skeleton 1.2s linear infinite; }
 @keyframes skeleton { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .wt-modal-title { display: inline-flex; align-items: center; gap: 8px; }
+/* clean up merged branches */
+.cleanup-base { display: flex; gap: 8px; }
+.cleanup-base select { flex: 1; min-width: 0; }
+.cleanup-base .btn { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.cleanup-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel); max-height: 300px; min-height: 64px; overflow: auto; }
+.cleanup-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 150px); align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
+.cleanup-row + .cleanup-row { border-top: 1px solid var(--border); }
+.cleanup-row:hover { background: var(--bg-panel-3); }
+.cleanup-name { font-weight: 500; }
+.cleanup-reason { font-size: 11px; padding: 0 6px; height: 18px; line-height: 16px; border-radius: 9px; border: 1px solid currentColor; white-space: nowrap; }
+.cleanup-reason.merged { color: var(--success); }
+.cleanup-reason.squashed { color: var(--info); }
+.cleanup-reason.gone { color: var(--warning); }
+.cleanup-meta { color: var(--text-secondary); text-align: right; }
+.cleanup-empty { display: flex; align-items: center; gap: 8px; padding: 12px; color: var(--text-secondary); font-size: 12px; }
+.cleanup-bulk { display: flex; align-items: center; gap: 6px; }
+.cleanup-bulk .field-hint { margin-left: auto; }
 
 /* context menu */
 .ctx-menu { position: fixed; z-index: 200; min-width: 200px; background: var(--bg-panel-3); border: 1px solid var(--border-strong); border-radius: 8px; padding: 4px; box-shadow: var(--shadow-menu); }

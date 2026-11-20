@@ -42,6 +42,7 @@ const GIT_METHODS: Record<keyof GitApi, true> = {
   unstageAll: true, discard: true, applyPatch: true, resolveConflict: true, takeSide: true, ignore: true,
   commit: true, headMessage: true, commitTemplate: true, recentAuthors: true, testSigning: true, signatureStatus: true,
   headDiff: true, unsetConfig: true, createBranch: true, deleteBranch: true, deleteRemoteBranch: true,
+  mergedBranches: true, deleteBranches: true, deleteRemoteBranches: true,
   renameBranch: true, checkout: true, checkoutRemote: true, setUpstream: true, createTag: true, deleteTag: true,
   pushTag: true, deleteRemoteTag: true, merge: true, rebase: true, interactiveRebase: true, cherryPick: true,
   revert: true, reset: true, continueOperation: true, abortOperation: true, skipOperation: true, stashSave: true,

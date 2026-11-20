@@ -9,6 +9,7 @@ import { SmartCommitModal, SplitCommitModal } from './SmartCommitModal'
 import { CreatePullRequestModal } from './CreatePullRequestModal'
 import { PullRequestModal } from './PullRequestModal'
 import { JobLogModal } from './JobLogView'
+import { CleanupBranchesModal } from './CleanupBranchesModal'
 
 export function Modals() {
   const modal = useStore((s) => s.modal)
@@ -37,6 +38,8 @@ export function Modals() {
       return <PullRequestModal />
     case 'jobLog':
       return <JobLogModal />
+    case 'cleanupBranches':
+      return <CleanupBranchesModal />
     default:
       return null
   }

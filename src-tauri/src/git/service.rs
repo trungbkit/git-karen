@@ -192,6 +192,15 @@ impl GitService {
                     "deleteRemoteBranch" => {
                         ret!(self.delete_remote_branch(r, &a.get::<String>(1)?, &a.get::<String>(2)?))
                     }
+                    "mergedBranches" => ret!(self.merged_branches(
+                        r,
+                        &a.get::<String>(1)?,
+                        a.get::<Option<bool>>(2)?.unwrap_or(false)
+                    )),
+                    "deleteBranches" => ret!(self.delete_branches(r, a.get(1)?)),
+                    "deleteRemoteBranches" => {
+                        ret!(self.delete_remote_branches(r, &a.get::<String>(1)?, a.get(2)?))
+                    }
                     "renameBranch" => ret!(self.rename_branch(r, &a.get::<String>(1)?, &a.get::<String>(2)?)),
                     "checkout" => ret!(self.checkout(r, &a.get::<String>(1)?)),
                     "checkoutRemote" => ret!(self.checkout_remote(r, &a.get::<String>(1)?, a.get(2)?)),

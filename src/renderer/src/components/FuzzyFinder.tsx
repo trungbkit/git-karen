@@ -39,6 +39,7 @@ const COMMAND_LABELS: { command: string; label: string; icon: IconName; needsRep
   { command: COMMANDS.fuzzyHistory, label: 'View file history / blame', icon: 'history', needsRepo: true },
   { command: COMMANDS.undo, label: 'Undo last destructive action', icon: 'undo', needsRepo: true },
   { command: COMMANDS.showReflog, label: 'Recovery / reflog', icon: 'undo', needsRepo: true },
+  { command: COMMANDS.cleanupBranches, label: 'Clean up merged branches…', icon: 'branch', needsRepo: true },
   { command: COMMANDS.compareWithDefault, label: 'Compare current branch with default branch', icon: 'compare', needsRepo: true },
   { command: COMMANDS.openInEditor, label: 'Open repository in external editor', icon: 'external', needsRepo: true },
   { command: COMMANDS.openTerminal, label: 'Open terminal', icon: 'terminal', needsRepo: true },

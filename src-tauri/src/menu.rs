@@ -57,6 +57,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .separator()
         .item(&i("repo:createBranch", "Create Branch", "CmdOrCtrl+B")?)
         .item(&i("view:switchBranch", "Switch Branch…", "CmdOrCtrl+Shift+B")?)
+        .item(&i("repo:cleanupBranches", "Clean Up Merged Branches…", "")?)
         .item(&i("repo:stash", "Stash", "CmdOrCtrl+Alt+S")?)
         .item(&i("repo:popStash", "Pop Stash", "CmdOrCtrl+Alt+P")?)
         .separator()

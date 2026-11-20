@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'reac
 import type { Ref, Stash, Submodule, Worktree } from '@shared/types'
 import { useStore, type RepoTab } from '../state/store'
 import { Icon, type IconName } from '../ui/Icon'
-import { showContextMenu } from '../ui/ContextMenu'
+import { showContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { prompt } from '../ui/dialogs'
 import {
   addRemote,
@@ -174,7 +174,12 @@ export function LeftPanel({ repo }: { repo: RepoTab }) {
         </button>
       </div>
       <div className="lp-scroll" ref={treeRef} role="tree" aria-label="Branches, remotes, tags and stashes">
-        <Section id="local" title="Local" icon="computer" count={locals.length} collapsed={isCollapsed('local')} onToggle={toggle} onAdd={() => void createBranchAt()} addTitle="Create branch">
+        <Section id="local" title="Local" icon="computer" count={locals.length} collapsed={isCollapsed('local')} onToggle={toggle} onAdd={() => void createBranchAt()} addTitle="Create branch"
+          menu={[
+            { label: 'Create branch', onClick: () => void createBranchAt() },
+            { label: 'Clean up merged branches…', onClick: () => s.setModal({ kind: 'cleanupBranches' }) }
+          ]}
+        >
           {renderTree(localTree, 0)}
           {locals.length === 0 && <Empty>No local branches</Empty>}
         </Section>
@@ -274,11 +279,19 @@ function Section(props: {
   onToggle(id: string): void
   onAdd?: () => void
   addTitle?: string
+  /** Context menu of the section header */
+  menu?: MenuItem[]
   children: ReactNode
 }) {
   return (
     <div className="lp-section">
-      <div className="lp-section-header" role="treeitem" aria-expanded={!props.collapsed} onClick={() => props.onToggle(props.id)}>
+      <div
+        className="lp-section-header"
+        role="treeitem"
+        aria-expanded={!props.collapsed}
+        onClick={() => props.onToggle(props.id)}
+        onContextMenu={props.menu ? (e) => showContextMenu(e, props.menu!) : undefined}
+      >
         <Icon name={props.collapsed ? 'chevron-right' : 'chevron-down'} size={11} />
         <Icon name={props.icon} size={13} />
         <span className="lp-section-title">{props.title}</span>

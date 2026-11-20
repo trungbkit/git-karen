@@ -279,6 +279,30 @@ export interface DiscardImpact {
   binary: number
 }
 
+/** A local branch whose work is already in the base branch it was compared with (see GitApi.mergedBranches). */
+export interface MergedBranch {
+  name: string
+  sha: string
+  /** merged: its tip is in the base; squashed: its changes reached the base as other commits;
+   *  gone: only its upstream was deleted, nothing shows its work reached the base */
+  reason: 'merged' | 'squashed' | 'gone'
+  /** Its upstream was deleted on the remote */
+  gone: boolean
+  /** Full name of its upstream, when that still exists */
+  upstream?: string
+  /** Its upstream holds nothing the base lacks, so deleting it on the remote loses no work */
+  upstreamMerged: boolean
+  date?: number
+  author?: string
+  summary?: string
+}
+
+export interface BranchDeletion {
+  name: string
+  /** git's message when the branch could not be deleted */
+  error?: string
+}
+
 export interface BranchImpact {
   /** Commits of the branch missing from HEAD */
   unmerged: number
@@ -668,6 +692,12 @@ export interface GitApi {
   createBranch(repo: string, name: string, startPoint?: string, checkout?: boolean): Promise<void>
   deleteBranch(repo: string, name: string, force?: boolean): Promise<void>
   deleteRemoteBranch(repo: string, remote: string, name: string): Promise<void>
+  /** Local branches whose work is already in `base` (e.g. "refs/remotes/origin/main"); `squashed` also looks for
+   *  squash and rebase merges, which is slower. Protected, base and checked-out branches are never listed. */
+  mergedBranches(repo: string, base: string, squashed?: boolean): Promise<MergedBranch[]>
+  /** Force-delete local branches; one failure does not stop the others */
+  deleteBranches(repo: string, names: string[]): Promise<BranchDeletion[]>
+  deleteRemoteBranches(repo: string, remote: string, names: string[]): Promise<void>
   renameBranch(repo: string, oldName: string, newName: string): Promise<void>
   checkout(repo: string, ref: string): Promise<void>
   /** Checkout a remote branch, creating a local tracking branch */

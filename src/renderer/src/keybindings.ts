@@ -187,6 +187,8 @@ export function dispatch(command: string): void {
       return undoLatest()
     case COMMANDS.showReflog:
       return s.setCenter(repo.center.kind === 'reflog' ? { kind: 'graph' } : { kind: 'reflog' })
+    case COMMANDS.cleanupBranches:
+      return s.setModal({ kind: 'cleanupBranches' })
     case COMMANDS.compareWithDefault: {
       const def = defaultBranch(repo)
       const current = currentBranch(repo) ?? repo.status?.headSha ?? null

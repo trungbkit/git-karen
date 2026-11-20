@@ -475,6 +475,37 @@ pub struct BranchImpact {
     pub orphaned: u32,
 }
 
+/// A local branch whose work is already in the base branch it was compared with.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MergedBranch {
+    pub name: String,
+    pub sha: String,
+    /// "merged" (its tip is in the base), "squashed" (its changes reached the base as other commits) or
+    /// "gone" (only its upstream was deleted; nothing shows its work reached the base)
+    pub reason: &'static str,
+    /// Its upstream was deleted on the remote
+    pub gone: bool,
+    /// Full name of its upstream, when that still exists
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
+    /// Its upstream holds nothing the base lacks, so deleting it on the remote loses no work
+    pub upstream_merged: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct BranchDeletion {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Filters of the graph search that need the history itself (`path:` and `content:`).
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct SearchLogOptions {

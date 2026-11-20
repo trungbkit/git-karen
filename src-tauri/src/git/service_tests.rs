@@ -1170,3 +1170,81 @@ async fn head_diff_combines_staged_and_unstaged_changes() {
     assert_eq!(left.iter().map(|d| (d.path.as_str(), d.hunks.len())).collect::<Vec<_>>(), [("a.txt", 1), ("b.txt", 1)]);
     assert!(left[0].hunks[0].lines.iter().any(|l| l.content == "fifteen"));
 }
+
+// ---------------------------------------------------------------------- merged branch cleanup
+
+#[tokio::test]
+async fn finds_merged_squashed_and_gone_branches_and_protects_the_rest() {
+    let (svc, _d, repo) = setup().await;
+    commit_file(&repo, "base.txt", "base\n", "base").await;
+    let (_rd, remote) = temp_dir("karen-remote-");
+    sh(&remote, &["init", "-q", "--bare"]).await;
+    svc.add_remote(&repo, "origin", &remote).await.unwrap();
+    let branch = |name: &'static str, file: &'static str| {
+        let repo = repo.clone();
+        async move {
+            sh(&repo, &["checkout", "-q", "-b", name, "main"]).await;
+            commit_file(&repo, file, "1\n", &format!("{name} 1")).await;
+            commit_file(&repo, file, "1\n2\n", &format!("{name} 2")).await;
+            sh(&repo, &["checkout", "-q", "main"]).await;
+        }
+    };
+    branch("merged", "m.txt").await;
+    branch("squashed", "s.txt").await;
+    branch("rebased", "r.txt").await;
+    branch("gone", "g.txt").await;
+    branch("open", "o.txt").await;
+    branch("busy", "b.txt").await;
+    sh(&repo, &["branch", "develop", "main"]).await;
+    branch("tracks-develop", "t.txt").await;
+    // merge "merged" normally, squash "squashed", replay "rebased" commit by commit
+    sh(&repo, &["merge", "-q", "--no-ff", "-m", "merge", "merged"]).await;
+    sh(&repo, &["merge", "-q", "--squash", "squashed"]).await;
+    sh(&repo, &["commit", "-q", "-m", "squash"]).await;
+    sh(&repo, &["cherry-pick", "main..rebased"]).await;
+    sh(&repo, &["merge", "-q", "--no-ff", "-m", "merge t", "tracks-develop"]).await;
+    sh(&repo, &["push", "-q", "origin", "main", "gone", "squashed", "open", "develop"]).await;
+    sh(&repo, &["branch", "-q", "-u", "origin/develop", "tracks-develop"]).await;
+    for b in ["gone", "squashed", "open"] {
+        sh(&repo, &["branch", "-q", "-u", &format!("origin/{b}"), b]).await;
+    }
+    // "gone" is deleted on the remote (as a host does after merging a pull request) and pruned here
+    sh(&remote, &["branch", "-D", "gone"]).await;
+    sh(&repo, &["fetch", "-q", "--prune", "origin"]).await;
+    // "busy" is merged but checked out in another worktree
+    sh(&repo, &["merge", "-q", "--no-ff", "-m", "merge busy", "busy"]).await;
+    sh(&repo, &["push", "-q", "origin", "main"]).await;
+    let (_wd, wt) = temp_dir("karen-wt-");
+    sh(&repo, &["worktree", "add", "-q", &format!("{wt}/busy"), "busy"]).await;
+
+    let base = "refs/remotes/origin/main";
+    let plain = svc.merged_branches(&repo, base, false).await.unwrap();
+    let names = |v: &[MergedBranch]| v.iter().map(|b| (b.name.clone(), b.reason)).collect::<Vec<_>>();
+    assert_eq!(names(&plain), [("gone".to_string(), "gone"), ("merged".to_string(), "merged"), ("tracks-develop".to_string(), "merged")]);
+    assert!(plain[0].gone && plain[0].upstream.is_none());
+    // origin/develop is merged too, but a protected branch is never offered for deletion on the remote
+    assert_eq!(plain[2].upstream.as_deref(), Some("refs/remotes/origin/develop"));
+    assert!(!plain[2].upstream_merged);
+
+    let all = svc.merged_branches(&repo, base, true).await.unwrap();
+    assert_eq!(
+        names(&all),
+        [
+            ("gone".to_string(), "gone"),
+            ("merged".to_string(), "merged"),
+            ("rebased".to_string(), "squashed"),
+            ("squashed".to_string(), "squashed"),
+            ("tracks-develop".to_string(), "merged")
+        ]
+    );
+    let squashed = all.iter().find(|b| b.name == "squashed").unwrap();
+    assert_eq!(squashed.upstream.as_deref(), Some("refs/remotes/origin/squashed"));
+    assert!(squashed.upstream_merged, "the upstream is the squashed branch itself");
+    assert!(svc.merged_branches(&repo, "refs/remotes/origin/nope", false).await.is_err());
+
+    let res = svc.delete_branches(&repo, vec!["merged".into(), "main".into(), "squashed".into()]).await.unwrap();
+    assert_eq!(res.iter().map(|d| (d.name.as_str(), d.error.is_some())).collect::<Vec<_>>(), [("merged", false), ("main", true), ("squashed", false)]);
+    svc.delete_remote_branches(&repo, "origin", vec!["squashed".into(), "open".into()]).await.unwrap();
+    assert_eq!(sh(&remote, &["branch", "--format=%(refname:short)"]).await, "develop\nmain");
+    assert!(svc.delete_remote_branches(&repo, "origin", vec!["--force".into()]).await.is_err());
+}

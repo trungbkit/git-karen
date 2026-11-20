@@ -705,10 +705,15 @@ export function showInGraph(sha: string) {
   store().setCenter({ kind: 'graph' })
 }
 
-export function remoteMenuItems(_repo: RepoTab, remote: Remote): MenuItem[] {
+export function remoteMenuItems(repo: RepoTab, remote: Remote): MenuItem[] {
   const s = store()
+  const remoteDefault = repo.refs.find((r) => r.type === 'remote' && r.isDefault && r.remote === remote.name)
   return [
     { label: `Fetch ${remote.name}`, onClick: () => void s.run(`Fetching ${remote.name}`, (r) => git().fetch(r, remote.name, true)) },
+    remoteDefault && {
+      label: `Clean up branches merged into ${remoteDefault.name}…`,
+      onClick: () => s.setModal({ kind: 'cleanupBranches', base: remoteDefault.fullName })
+    },
     {
       label: 'Edit remote URL',
       onClick: async () => {
