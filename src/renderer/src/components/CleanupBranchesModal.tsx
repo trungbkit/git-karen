@@ -11,8 +11,10 @@ import {
   checkoutTarget,
   cleanupRows,
   defaultBase,
+  filterCandidates,
   groupRows,
   groupSelection,
+  isLocalBase,
   isSelected,
   rangeChoices,
   rememberChecks,
@@ -49,6 +51,9 @@ const STATUS_TITLE: Record<CleanupStatus, string> = {
 
 type Scan = { kind: 'loading' } | { kind: 'done'; branches: MergedBranch[] } | { kind: 'error'; message: string }
 
+/** Above this many branches to compare with, a filter box helps find one */
+const BASE_FILTER_FROM = 15
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const plural = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
 
@@ -62,11 +67,15 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
   const setModal = useStore((s) => s.setModal)
   const protectedBranches = useStore((s) => s.prefs.protectedBranches)
   const candidates = useMemo(() => baseCandidates(repo), [repo])
-  const saved = useStore.getState().prefs.cleanup[repo.path]
+  const { cleanup: savedAll, defaultBranchName } = useStore.getState().prefs
+  const saved = savedAll[repo.path]
   const [base, setBase] = useState<string | null>(
-    () => initialBase ?? (saved?.base && repo.refs.some((r) => r.fullName === saved.base) ? saved.base : defaultBase(repo, candidates))
+    () =>
+      initialBase ??
+      (saved?.base && repo.refs.some((r) => r.fullName === saved.base) ? saved.base : defaultBase(repo, candidates, defaultBranchName))
   )
   const [alsoRemote, setAlsoRemote] = useState(saved?.alsoRemote ?? false)
+  const [baseFilter, setBaseFilter] = useState('')
   const [scan, setScan] = useState<Scan>({ kind: 'loading' })
   const [checks, setChecks] = useState<Record<string, SquashCheck>>({})
   /** Squash checks done out of those needed, while they run */
@@ -151,8 +160,11 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
   if (scan.kind === 'done') shown.current = rows.map((r) => r.branch.name)
   const selectable = rows.filter((r) => !r.locked)
   const selected = rows.filter((r) => isSelected(r, picked))
-  const remoteTargets = alsoRemote ? remoteDeletions(selected) : []
-  const keptRemote = alsoRemote ? selected.filter((r) => r.branch.upstream).length - remoteTargets.length : 0
+  const localBase = isLocalBase(base)
+  const deleteRemote = alsoRemote && !localBase
+  const remoteTargets = deleteRemote ? remoteDeletions(selected) : []
+  const keptRemote = deleteRemote ? selected.filter((r) => r.branch.upstream).length - remoteTargets.length : 0
+  const shownCandidates = filterCandidates(candidates, baseFilter, base)
   const baseRef = candidates.find((r) => r.fullName === base)
   const baseName = baseRef?.name ?? base?.replace(/^refs\/(remotes|heads)\//, '') ?? ''
   const baseRemote = baseRef?.remote ?? null
@@ -260,29 +272,54 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
       }
     >
       {!candidates.length ? (
-        <span className="field-hint">This repository has no remote branches to compare with. Add a remote and fetch first.</span>
+        <span className="field-hint">This repository has no branches to compare with yet.</span>
       ) : (
         <>
           <div className="field">
             <label htmlFor="kc-cleanup-base">Branches merged into</label>
+            {candidates.length > BASE_FILTER_FROM && (
+              <input
+                type="search"
+                className="cleanup-base-filter"
+                placeholder="Filter branches"
+                aria-label="Filter the branches to compare with"
+                value={baseFilter}
+                onChange={(e) => setBaseFilter(e.target.value)}
+                disabled={!!busy}
+              />
+            )}
             <div className="cleanup-base">
-              <select id="kc-cleanup-base" value={base ?? ''} onChange={(e) => {
+              <select
+                id="kc-cleanup-base"
+                value={base ?? ''}
+                onChange={(e) => {
                   setBase(e.target.value)
                   remember(repo.path, { base: e.target.value })
                 }}
                 disabled={!!busy}
               >
                 {!base && <option value="">Choose a branch</option>}
-                {candidates.map((r) => (
-                  <option key={r.fullName} value={r.fullName}>
-                    {r.name}
-                    {r.isDefault ? ' (default)' : ''}
-                  </option>
-                ))}
+                {(['remote', 'local'] as const).map((type) => {
+                  const refs = shownCandidates.filter((r) => r.type === type)
+                  return (
+                    refs.length > 0 && (
+                      <optgroup key={type} label={type === 'remote' ? 'Remote' : 'Local'}>
+                        {refs.map((r) => (
+                          <option key={r.fullName} value={r.fullName}>
+                            {r.name}
+                            {r.isDefault ? ' (default)' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )
+                  )
+                })}
               </select>
-              <button className="btn" onClick={() => void fetchAndRescan()} disabled={!baseRemote || !!busy} title={`Fetch ${baseRemote ?? ''} and remove branches deleted there`}>
-                <Icon name="fetch" size={13} /> {busy === 'Fetching' ? 'Fetching…' : `Fetch ${baseRemote ?? ''}`}
-              </button>
+              {!localBase && (
+                <button className="btn" onClick={() => void fetchAndRescan()} disabled={!baseRemote || !!busy} title={`Fetch ${baseRemote ?? ''} and remove branches deleted there`}>
+                  <Icon name="fetch" size={13} /> {busy === 'Fetching' ? 'Fetching…' : `Fetch ${baseRemote ?? ''}`}
+                </button>
+              )}
             </div>
           </div>
 
@@ -405,19 +442,21 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
             <span className="field-warning">Branches whose upstream was deleted are not selected when they have commits that are not in the base branch.</span>
           )}
 
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={alsoRemote}
-              disabled={!!busy}
-              onChange={(e) => {
-                setAlsoRemote(e.target.checked)
-                remember(repo.path, { alsoRemote: e.target.checked })
-              }}
-            />
-            Also delete their branches on the remote
-          </label>
-          {alsoRemote && (
+          {!localBase && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={alsoRemote}
+                disabled={!!busy}
+                onChange={(e) => {
+                  setAlsoRemote(e.target.checked)
+                  remember(repo.path, { alsoRemote: e.target.checked })
+                }}
+              />
+              Also delete their branches on the remote
+            </label>
+          )}
+          {deleteRemote && (
             <span className="field-hint">
               {remoteTargets.length
                 ? `Deletes ${remoteTargets.map((r) => r.branch.upstream!.replace(/^refs\/remotes\//, '')).join(', ')}.`

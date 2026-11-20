@@ -36,7 +36,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for scope and design choices, a
 
 ### Branches, tags and history
 - Create, rename, delete, check out and set upstream for branches; check out remote branches as tracking branches
-- Clean up merged branches: list the local branches already merged into a remote branch, including squash and rebase merges, and delete them, and optionally their branches on the remote, in one step
+- Clean up merged branches: list the local branches already merged into a remote or local branch, including squash and rebase merges, and delete them, and optionally their branches on the remote, in one step
 - Annotated and lightweight tags, pushed to or deleted from remotes
 - Merge (fast-forward only, no fast-forward, squash), rebase, cherry-pick, revert and reset (soft, mixed, hard)
 - Interactive rebase: pick, reword, squash, fixup, drop and edit

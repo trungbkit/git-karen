@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { MergedBranch, Ref, SquashCheck } from '@shared/types'
 import {
   DIRTY_CURRENT,
+  baseCandidates,
   cachedChecks,
   checkoutTarget,
   cleanupRows,
+  defaultBase,
+  filterCandidates,
   groupRows,
   groupSelection,
   hintCount,
@@ -215,5 +218,36 @@ describe('cleanup hint', () => {
     expect(hintCount(['m', 'g'], ['m', 'g', 'x'])).toBe(0)
     expect(hintCount(['m', 'g', 'new'], ['m', 'g'])).toBe(1)
     expect(hintCount(undefined, ['m'])).toBe(0)
+  })
+})
+
+describe('base branches', () => {
+  const ref = (fullName: string, extra: Partial<Ref> = {}): Ref => ({
+    fullName,
+    name: fullName.replace(/^refs\/(heads|remotes)\//, ''),
+    type: fullName.startsWith('refs/heads/') ? 'local' : 'remote',
+    sha: 'x',
+    ...extra
+  })
+  const origin = [{ name: 'origin' }] as never
+
+  it('lists remote branches, the default first, then local ones', () => {
+    const refs = [ref('refs/heads/zeta'), ref('refs/remotes/origin/b'), ref('refs/heads/main'), ref('refs/remotes/origin/main', { isDefault: true, remote: 'origin' }), ref('refs/tags/v1', { type: 'tag' })]
+    expect(baseCandidates({ refs }).map((r) => r.fullName)).toEqual(['refs/remotes/origin/main', 'refs/remotes/origin/b', 'refs/heads/main', 'refs/heads/zeta'])
+  })
+
+  it("prefers the remote's default branch, and falls back to the local default branch", () => {
+    const withRemote = baseCandidates({ refs: [ref('refs/heads/main'), ref('refs/remotes/origin/main', { remote: 'origin' })] })
+    expect(defaultBase({ remotes: origin }, withRemote)).toBe('refs/remotes/origin/main')
+    const localOnly = baseCandidates({ refs: [ref('refs/heads/trunk'), ref('refs/heads/develop'), ref('refs/heads/stable')] })
+    expect(defaultBase({ remotes: [] }, localOnly)).toBe('refs/heads/develop')
+    expect(defaultBase({ remotes: [] }, localOnly, 'stable')).toBe('refs/heads/stable')
+    expect(defaultBase({ remotes: [] }, baseCandidates({ refs: [ref('refs/heads/feature')] }))).toBeNull()
+  })
+
+  it('filters by name and keeps the chosen base', () => {
+    const refs = baseCandidates({ refs: [ref('refs/heads/main'), ref('refs/heads/release/2'), ref('refs/remotes/origin/main')] })
+    expect(filterCandidates(refs, 'rel', 'refs/heads/main').map((r) => r.fullName)).toEqual(['refs/heads/main', 'refs/heads/release/2'])
+    expect(filterCandidates(refs, '  ', null)).toHaveLength(3)
   })
 })

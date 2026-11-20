@@ -18,7 +18,7 @@ export const useCleanupHints = create<CleanupHints>(() => ({ names: {}, seen: {}
 export async function refreshCleanupHint(path: string) {
   const { repos, prefs } = useStore.getState()
   const repo = repos[path]
-  const base = repo && defaultBase(repo, baseCandidates(repo))
+  const base = repo && defaultBase(repo, baseCandidates(repo), prefs.defaultBranchName)
   if (!base) return
   try {
     const branches = await window.git.mergedBranches(path, base, { protected: parseBranchList(prefs.protectedBranches) })

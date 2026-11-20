@@ -1,6 +1,7 @@
 // Clean up merged branches: what the dialog shows and selects, kept apart from React so it can be tested.
 import type { MergedBranch, Ref, SquashCheck } from '@shared/types'
 import type { RepoTab } from '../state/store'
+import { fuzzyMatch } from '../util/fuzzy'
 
 /** Branches sent to one squash check, so results show up while the rest are still being checked. */
 export const SQUASH_BATCH = 8
@@ -20,20 +21,42 @@ export interface CleanupRow {
 
 export const DIRTY_CURRENT = 'Commit or stash your changes before deleting the current branch'
 
-/** Remote branches to compare with: each remote's default branch first, then the rest by name. */
-export function baseCandidates(repo: RepoTab): Ref[] {
-  return repo.refs
-    .filter((r) => r.type === 'remote')
-    .sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name))
+/** Local branches tried as the base when there is no remote branch to compare with, after the preferred default name. */
+const LOCAL_DEFAULTS = ['main', 'master', 'develop', 'trunk']
+
+/** Branches to compare with: remote branches (each remote's default branch first, then by name), then local ones by name. */
+export function baseCandidates(repo: Pick<RepoTab, 'refs'>): Ref[] {
+  const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name)
+  const remote = repo.refs.filter((r) => r.type === 'remote').sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || byName(a, b))
+  return [...remote, ...repo.refs.filter((r) => r.type === 'local').sort(byName)]
 }
 
-export function defaultBase(repo: RepoTab, candidates: Ref[]): string | null {
+/**
+ * The remote's default branch (origin's first), else origin's main or master; without any, the local default branch:
+ * `preferredLocal` (the default branch name from Preferences), then main, master, develop or trunk.
+ */
+export function defaultBase(repo: Pick<RepoTab, 'remotes'>, candidates: Ref[], preferredLocal?: string): string | null {
   const origin = repo.remotes.find((r) => r.name === 'origin')?.name ?? repo.remotes[0]?.name
+  const remotes = candidates.filter((r) => r.type === 'remote')
   const pick =
-    candidates.find((r) => r.isDefault && r.remote === origin) ??
-    candidates.find((r) => r.isDefault) ??
-    candidates.find((r) => r.name === `${origin}/main` || r.name === `${origin}/master`)
-  return pick?.fullName ?? null
+    remotes.find((r) => r.isDefault && r.remote === origin) ??
+    remotes.find((r) => r.isDefault) ??
+    remotes.find((r) => r.name === `${origin}/main` || r.name === `${origin}/master`)
+  if (pick) return pick.fullName
+  for (const name of [preferredLocal, ...LOCAL_DEFAULTS]) {
+    const local = name && candidates.find((r) => r.type === 'local' && r.name === name)
+    if (local) return local.fullName
+  }
+  return null
+}
+
+/** A local branch as the base: nothing to fetch, and no remote branches to delete. */
+export const isLocalBase = (base: string | null) => !!base?.startsWith('refs/heads/')
+
+/** Candidates matching the filter, always keeping the chosen base so the select still shows it. */
+export function filterCandidates(candidates: Ref[], query: string, keep: string | null): Ref[] {
+  const q = query.trim()
+  return q ? candidates.filter((r) => r.fullName === keep || fuzzyMatch(q, r.name) !== null) : candidates
 }
 
 /** The remote an upstream such as "refs/remotes/origin/feature/x" belongs to, and its branch name there. */

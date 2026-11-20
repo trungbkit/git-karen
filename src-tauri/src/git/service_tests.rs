@@ -1300,3 +1300,20 @@ async fn checks_squash_and_rebase_merges() {
     assert_eq!(gone.unmerged[0].sha, sh(&repo, &["rev-parse", "gone"]).await);
     assert!(svc.check_squash_merged(&repo, "refs/heads/main", vec!["--force".into()]).await.is_err());
 }
+
+#[tokio::test]
+async fn compares_with_a_local_base_branch() {
+    let (svc, _d, repo) = setup().await;
+    commit_file(&repo, "base.txt", "base\n", "base").await;
+    sh(&repo, &["branch", "release", "main"]).await;
+    two_commit_branch(&repo, "landed", "l.txt").await;
+    two_commit_branch(&repo, "pending", "p.txt").await;
+    sh(&repo, &["checkout", "-q", "release"]).await;
+    sh(&repo, &["merge", "-q", "--no-ff", "-m", "merge landed", "landed"]).await;
+    sh(&repo, &["checkout", "-q", "main"]).await;
+
+    let res = svc.merged_branches(&repo, "refs/heads/release", MergedBranchOptions::default()).await.unwrap();
+    let names = res.iter().map(|b| (b.name.as_str(), b.reason)).collect::<Vec<_>>();
+    // the base branch itself is never offered, nor main, even though main's tip is in release
+    assert_eq!(names, [("landed", "merged"), ("pending", "unknown")]);
+}
