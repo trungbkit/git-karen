@@ -13,6 +13,8 @@ import {
   hintCount,
   hintNames,
   isSelected,
+  prLabel,
+  prLookups,
   rangeChoices,
   rememberChecks,
   remoteDeletions,
@@ -249,5 +251,29 @@ describe('base branches', () => {
     const refs = baseCandidates({ refs: [ref('refs/heads/main'), ref('refs/heads/release/2'), ref('refs/remotes/origin/main')] })
     expect(filterCandidates(refs, 'rel', 'refs/heads/main').map((r) => r.fullName)).toEqual(['refs/heads/main', 'refs/heads/release/2'])
     expect(filterCandidates(refs, '  ', null)).toHaveLength(3)
+  })
+})
+
+describe('pull requests of upstream-deleted branches', () => {
+  const pr = (branch: string, state: 'merged' | 'closed', headSha: string) => ({ branch, number: 12, state, headSha, url: '' })
+  const branches = [branch('landed', 'gone'), branch('amended', 'gone'), branch('dropped', 'gone'), branch('squashed', 'gone'), branch('m', 'merged')]
+  const checks = { landed: check('landed', false), amended: check('amended', false), dropped: check('dropped', false), squashed: check('squashed', true) }
+
+  it('asks only about upstream-deleted branches whose changes are not in the base', () => {
+    expect(prLookups(cleanupRows(branches, checks, opts))).toEqual(['landed', 'amended', 'dropped'])
+    // not before their squash check is in
+    expect(prLookups(cleanupRows(branches, {}, { ...opts, checking: true }))).toEqual([])
+  })
+
+  it('ticks a branch only when its pull request was merged at the commit the branch is at', () => {
+    const prs = { landed: pr('landed', 'merged', 'landed-sha'), amended: pr('amended', 'merged', 'older-sha'), dropped: pr('dropped', 'closed', 'dropped-sha') }
+    const rows = cleanupRows(branches, checks, { ...opts, prs })
+    expect(rows.map((r) => [r.branch.name, r.pr ? prLabel(r.pr) : null, selectedByDefault(r)])).toEqual([
+      ['landed', 'merged in #12', true],
+      ['amended', 'merged in #12', false],
+      ['dropped', '#12 closed', false],
+      ['squashed', null, true],
+      ['m', null, true]
+    ])
   })
 })

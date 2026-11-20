@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use super::remote::RepoRef;
-use super::{enc, pr_body, Api, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
+use super::{enc, pr_body, Api, BranchPullRequest, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
 
 /// GitLab has no batch endpoint for commit statuses; at most this many commits are asked about per call (the rest
 /// come with the next poll), one request at a time to stay gentle with the instance.
@@ -63,6 +63,28 @@ pub async fn merge_requests(api: &Api<'_>, r: &RepoRef, viewer: Option<String>) 
     let url = api.url(&format!("{}/merge_requests?state=opened&per_page=50&order_by=updated_at&sort=desc", project(r)));
     let list = api.json("GET", &url, None).await?;
     Ok(parse_merge_requests(&list, viewer, r))
+}
+
+/// The most recent closed or merged merge request in a list from one source branch, newest first.
+pub fn parse_closed_mr(branch: &str, list: &Value) -> Option<BranchPullRequest> {
+    list.as_array()?.iter().find_map(|m| {
+        let state = match m["state"].as_str()? {
+            "merged" => "merged",
+            "closed" => "closed",
+            _ => return None,
+        };
+        Some(BranchPullRequest { branch: branch.into(), number: m["iid"].as_u64()?, state, head_sha: s(&m["sha"]), url: s(&m["web_url"]) })
+    })
+}
+
+/// One request per branch (GitLab has no batch query), at most `CI_PER_CALL` branches.
+pub async fn closed_merge_requests(api: &Api<'_>, r: &RepoRef, branches: &[String]) -> Result<Vec<BranchPullRequest>, String> {
+    let mut out = vec![];
+    for b in branches.iter().take(CI_PER_CALL) {
+        let url = api.url(&format!("{}/merge_requests?source_branch={}&state=all&order_by=updated_at&sort=desc&per_page=5", project(r), enc(b)));
+        out.extend(parse_closed_mr(b, &api.json("GET", &url, None).await?));
+    }
+    Ok(out)
 }
 
 pub async fn members(api: &Api<'_>, r: &RepoRef) -> Result<Vec<String>, String> {
@@ -216,6 +238,24 @@ mod tests {
         assert_eq!(draft_title(" T ", true), "Draft: T");
         assert_eq!(draft_title("Draft: T", true), "Draft: T");
         assert_eq!(draft_title("T", false), "T");
+    }
+
+    #[tokio::test]
+    async fn finds_closed_merge_requests_by_source_branch() {
+        let (url, seen) = serve(vec![
+            ("200 OK", "", r#"[{"iid":3,"state":"opened","sha":"o","web_url":"w3"},{"iid":2,"state":"merged","sha":"abc","web_url":"w2"}]"#.into()),
+            ("200 OK", "", "[]".into()),
+        ]);
+        let p = Provider { kind: Kind::Gitlab, host: "gitlab.com".into(), api_url: url, web_url: "https://gitlab.com".into(), configured: false };
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "glpat".into(), env: &env, limits: &limits };
+        let r = remote::resolve("https://gitlab.com/g/app.git", &[]).unwrap();
+        let res = closed_merge_requests(&api, &r, &["feat/x".into(), "none".into()]).await.unwrap();
+        assert_eq!(res, [BranchPullRequest { branch: "feat/x".into(), number: 2, state: "merged", head_sha: "abc".into(), url: "w2".into() }]);
+        let reqs = seen.lock().unwrap().clone();
+        assert!(reqs[0].starts_with("GET /projects/g%2Fapp/merge_requests?source_branch=feat%2Fx&state=all"));
+        assert_eq!(parse_closed_mr("b", &json!([{ "iid": 1, "state": "closed", "sha": "s", "web_url": "u" }])).map(|m| m.state), Some("closed"));
     }
 
     #[tokio::test]

@@ -172,6 +172,7 @@ const integrations: IntegrationsApi = {
   repoInfo: (repo, remote) => hostingCall('repoInfo', repo, remote ?? null),
   pullRequests: (repo, remote) => hostingCall('pullRequests', repo, remote ?? null),
   reviewerSuggestions: (repo, remote) => hostingCall('reviewerSuggestions', repo, remote ?? null),
+  closedPullRequests: (repo, remote, branches) => hostingCall('closedPullRequests', repo, remote, branches),
   createPullRequest: (repo, input) => hostingCall('createPullRequest', repo, input),
   pullRequest: (repo, remote, number) => hostingCall('pullRequest', repo, remote, number),
   commentPullRequest: (repo, remote, number, body) => hostingCall('commentPullRequest', repo, remote, number, body),

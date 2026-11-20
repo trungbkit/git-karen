@@ -21,7 +21,7 @@ Each feature below has unit or integration tests, but nobody has clicked through
 - Drag and drop of files and folders, the "behind" banner after auto-fetch, branch prefix suggestions.
 - Themes (Nord, Solarized, custom accent, following the system theme), compact density, skeletons, progress bars, error toasts with action buttons, focus rings, `prefers-reduced-motion`.
 - Clone progress with a large repository.
-- Clean up merged branches on a repository that uses squash merges: squash-merged branches turn ticked as the checks come in, protected branches never show, and deleting the checked-out branch switches to the base first. Group checkboxes and shift-click ranges, the list of commits not in the base, the base and remote choice kept per repo, and the "to clean up" badge on Local appearing after a fetch and going away once the dialog was opened.
+- Clean up merged branches on a repository that uses squash merges: squash-merged branches turn ticked as the checks come in, protected branches never show, and deleting the checked-out branch switches to the base first. Group checkboxes and shift-click ranges, the list of commits not in the base, the base and remote choice kept per repo, and the "to clean up" badge on Local appearing after a fetch and going away once the dialog was opened. A local branch as the base (and a repository without remotes), and the `merged in #123` / `#123 closed` labels on upstream-deleted branches with a GitHub and a GitLab token.
 
 ## Measurements still to take
 - Word-diff cost on a 5,000-line diff inside the app's WKWebView (so far it has only been measured in Chromium).

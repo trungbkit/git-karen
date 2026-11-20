@@ -1,5 +1,6 @@
 // Clean up merged branches: what the dialog shows and selects, kept apart from React so it can be tested.
 import type { MergedBranch, Ref, SquashCheck } from '@shared/types'
+import type { BranchPullRequest } from '@shared/integrations'
 import type { RepoTab } from '../state/store'
 import { fuzzyMatch } from '../util/fuzzy'
 
@@ -17,6 +18,8 @@ export interface CleanupRow {
   /** Why it cannot be selected */
   locked?: string
   check?: SquashCheck
+  /** Its last closed or merged pull request, for an upstream-deleted branch whose changes are not in the base */
+  pr?: BranchPullRequest
 }
 
 export const DIRTY_CURRENT = 'Commit or stash your changes before deleting the current branch'
@@ -81,7 +84,7 @@ export function cleanupStatus(b: MergedBranch, check: SquashCheck | undefined, c
 export function cleanupRows(
   branches: MergedBranch[],
   checks: Record<string, SquashCheck>,
-  opts: { checking: boolean; currentBranch: string | null; dirty: number }
+  opts: { checking: boolean; currentBranch: string | null; dirty: number; prs?: Record<string, BranchPullRequest> }
 ): CleanupRow[] {
   return branches.flatMap((branch) => {
     const check = checks[branch.name]
@@ -89,13 +92,32 @@ export function cleanupRows(
     if (!status) return []
     const current = branch.name === opts.currentBranch
     const locked = current ? (opts.dirty > 0 ? DIRTY_CURRENT : undefined) : branch.worktree
-    return [{ branch, status, current, locked, check }]
+    const pr = status === 'gone' ? opts.prs?.[branch.name] : undefined
+    return [{ branch, status, current, locked, check, pr }]
   })
 }
 
-/** Ticked until the user says otherwise: merged and squash merged branches, but never the checked-out one. */
+/**
+ * Ticked until the user says otherwise: merged and squash merged branches, and upstream-deleted ones whose pull request
+ * was merged with the commit the branch is at (anything else means commits that never reached the pull request).
+ * Never the checked-out branch.
+ */
 export function selectedByDefault(row: CleanupRow): boolean {
-  return !row.locked && !row.current && (row.status === 'merged' || row.status === 'squashed')
+  if (row.locked || row.current) return false
+  return row.status === 'merged' || row.status === 'squashed' || prMergedAtTip(row)
+}
+
+export function prMergedAtTip(row: CleanupRow): boolean {
+  return row.pr?.state === 'merged' && row.pr.headSha === row.branch.sha
+}
+
+/** Branches to ask the hosting provider about: upstream deleted, and their changes not found in the base. */
+export function prLookups(rows: CleanupRow[]): string[] {
+  return rows.filter((r) => r.status === 'gone' && r.check && !r.check.squashed).map((r) => r.branch.name)
+}
+
+export function prLabel(pr: BranchPullRequest): string {
+  return pr.state === 'merged' ? `merged in #${pr.number}` : `#${pr.number} closed`
 }
 
 export function isSelected(row: CleanupRow, picked: Record<string, boolean>): boolean {

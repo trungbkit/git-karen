@@ -111,6 +111,16 @@ export interface PullRequestList {
   items: PullRequest[]
 }
 
+/** The latest pull request from a branch that was closed or merged. */
+export interface BranchPullRequest {
+  branch: string
+  number: number
+  state: 'merged' | 'closed'
+  /** The commit its head branch pointed at last */
+  headSha: string
+  url: string
+}
+
 export interface CreatePullRequestInput {
   /** Remote of the repository the PR is opened in (default: upstream, origin, first remote) */
   baseRemote?: string | null
@@ -257,6 +267,8 @@ export interface IntegrationsApi {
   repoInfo(repo: string, remote?: string | null): Promise<RepoHosting | null>
   pullRequests(repo: string, remote?: string | null): Promise<PullRequestList>
   reviewerSuggestions(repo: string, remote?: string | null): Promise<string[]>
+  /** For each branch that had one, its most recent closed or merged pull request (GitLab: the first 30 branches) */
+  closedPullRequests(repo: string, remote: string | null, branches: string[]): Promise<BranchPullRequest[]>
   createPullRequest(repo: string, input: CreatePullRequestInput): Promise<CreatedPullRequest>
   /** A GitHub pull request with its conversation, checks and merge state */
   pullRequest(repo: string, remote: string | null, number: number): Promise<PullRequestDetail>

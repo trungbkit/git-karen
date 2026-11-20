@@ -6,10 +6,12 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::remote::{github_graphql_url, RepoRef};
-use super::{enc, pr_body, Api, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
+use super::{enc, pr_body, Api, BranchPullRequest, CiCheck, CiState, CiStatus, CreatePrInput, CreatedPr, PullRequest, PullRequestList, Viewer};
 
 /// Commits per CI query; GitHub caps a query's node count, and 50 commits × 50 checks stays well under it
 const CI_BATCH: usize = 50;
+/// Branches per closed pull request query, one aliased connection each
+const BRANCH_BATCH: usize = 50;
 
 pub(super) async fn graphql(api: &Api<'_>, query: &str, variables: Value) -> Result<Value, String> {
     graphql_partial(api, query, variables).await.map(|(data, _)| data)
@@ -103,6 +105,40 @@ pub async fn pull_requests(api: &Api<'_>, r: &RepoRef) -> Result<PullRequestList
         return Err(format!("GitHub cannot find {} with this token.", r.path));
     }
     Ok(parse_pull_requests(&data))
+}
+
+/// One query for many branches: an aliased `pullRequests(headRefName:)` per branch, names passed as variables.
+pub fn closed_prs_query(count: usize) -> String {
+    let vars: String = (0..count).map(|i| format!(", $b{i}: String!")).collect();
+    let fields: String = (0..count)
+        .map(|i| {
+            format!("    b{i}: pullRequests(headRefName: $b{i}, states: [MERGED, CLOSED], first: 1, orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ nodes {{ number state url headRefOid }} }}\n")
+        })
+        .collect();
+    format!("query($owner: String!, $name: String!{vars}) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}")
+}
+
+pub fn parse_closed_pr(branch: &str, connection: &Value) -> Option<BranchPullRequest> {
+    let n = &connection["nodes"][0];
+    let state = match n["state"].as_str()? {
+        "MERGED" => "merged",
+        "CLOSED" => "closed",
+        _ => return None,
+    };
+    Some(BranchPullRequest { branch: branch.into(), number: n["number"].as_u64()?, state, head_sha: s(&n["headRefOid"]), url: s(&n["url"]) })
+}
+
+pub async fn closed_pull_requests(api: &Api<'_>, r: &RepoRef, branches: &[String]) -> Result<Vec<BranchPullRequest>, String> {
+    let mut out = vec![];
+    for batch in branches.chunks(BRANCH_BATCH) {
+        let mut vars = json!({ "owner": r.owner, "name": r.name });
+        for (i, b) in batch.iter().enumerate() {
+            vars[format!("b{i}")] = json!(b);
+        }
+        let data = graphql(api, &closed_prs_query(batch.len()), vars).await?;
+        out.extend(batch.iter().enumerate().filter_map(|(i, b)| parse_closed_pr(b, &data["repository"][format!("b{i}")])));
+    }
+    Ok(out)
 }
 
 pub async fn assignable_users(api: &Api<'_>, r: &RepoRef) -> Result<Vec<String>, String> {
@@ -390,6 +426,31 @@ mod tests {
         assert!(pr.existing);
         assert_eq!(pr.number, 3);
         assert!(seen.lock().unwrap()[1].starts_with("GET /repos/o/r/pulls?state=open&head=o%3Afeat&base=main "));
+    }
+
+    #[tokio::test]
+    async fn finds_closed_pull_requests_of_many_branches_in_one_query() {
+        let body = json!({ "data": { "repository": {
+            "b0": { "nodes": [{ "number": 12, "state": "MERGED", "url": "https://github.com/o/r/pull/12", "headRefOid": "a".repeat(40) }] },
+            "b1": { "nodes": [] },
+            "b2": { "nodes": [{ "number": 7, "state": "CLOSED", "url": "https://github.com/o/r/pull/7", "headRefOid": "b".repeat(40) }] }
+        } } })
+        .to_string();
+        let (url, seen) = serve(vec![("200 OK", "", body)]);
+        let p = provider(&url);
+        let limits = Mutex::new(HashMap::new());
+        let env = no_proxy();
+        let api = Api { provider: &p, token: "tok".into(), env: &env, limits: &limits };
+        let r = remote::resolve("git@github.com:o/r.git", &[]).unwrap();
+        let branches = ["feature/a", "never-opened", "spike\"quoted"].map(String::from);
+        let res = closed_pull_requests(&api, &r, &branches).await.unwrap();
+        assert_eq!(res.iter().map(|p| (p.branch.as_str(), p.number, p.state)).collect::<Vec<_>>(), [("feature/a", 12, "merged"), ("spike\"quoted", 7, "closed")]);
+        assert_eq!(res[0].head_sha, "a".repeat(40));
+        let reqs = seen.lock().unwrap().clone();
+        assert_eq!(reqs.len(), 1);
+        // branch names travel as variables, never inside the query text
+        assert!(reqs[0].contains(r#""b2":"spike\"quoted""#));
+        assert!(closed_prs_query(2).contains("b1: pullRequests(headRefName: $b1, states: [MERGED, CLOSED]"));
     }
 
     #[tokio::test]

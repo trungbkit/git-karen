@@ -116,6 +116,19 @@ pub struct PullRequestList {
     pub items: Vec<PullRequest>,
 }
 
+/// The latest pull request from a branch that was closed or merged.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchPullRequest {
+    pub branch: String,
+    pub number: u64,
+    /// "merged" or "closed"
+    pub state: &'static str,
+    /// The commit its head branch pointed at last
+    pub head_sha: String,
+    pub url: String,
+}
+
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CreatePrInput {
@@ -761,6 +774,19 @@ impl Integrations {
         }
     }
 
+    /// For each branch that had one, its most recent closed or merged pull request (opened from this repository or a fork).
+    pub async fn closed_pull_requests(&self, repo: &str, remote: Option<String>, branches: Vec<String>) -> Result<Vec<BranchPullRequest>, String> {
+        for b in &branches {
+            safe_name(b, "branch name")?;
+        }
+        let (_, r) = self.repo_ref(repo, remote).await?;
+        let api = self.api(&r.provider).await?;
+        match r.provider.kind {
+            Kind::Github => github::closed_pull_requests(&api, &r, &branches).await,
+            _ => gitlab::closed_merge_requests(&api, &r, &branches).await,
+        }
+    }
+
     pub async fn reviewer_suggestions(&self, repo: &str, remote: Option<String>) -> Result<Vec<String>, String> {
         let (_, r) = self.repo_ref(repo, remote).await?;
         let api = self.api(&r.provider).await?;
@@ -920,6 +946,7 @@ impl Integrations {
             }
             "repoInfo" => v(self.repo_info(&a.get::<String>(0)?, a.get(1)?).await?),
             "pullRequests" => v(self.pull_requests(&a.get::<String>(0)?, a.get(1)?).await?),
+            "closedPullRequests" => v(self.closed_pull_requests(&a.get::<String>(0)?, a.get(1)?, a.get(2)?).await?),
             "reviewerSuggestions" => v(self.reviewer_suggestions(&a.get::<String>(0)?, a.get(1)?).await?),
             "createPullRequest" => v(self.create_pull_request(&a.get::<String>(0)?, a.get(1)?).await?),
             "pullRequest" => v(self.pull_request(&a.get::<String>(0)?, a.get(1)?, a.get(2)?).await?),

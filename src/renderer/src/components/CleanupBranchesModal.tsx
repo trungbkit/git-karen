@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MergedBranch, Preferences, SquashCheck } from '@shared/types'
+import type { BranchPullRequest } from '@shared/integrations'
 import { useActiveRepo, useStore, type RepoTab } from '../state/store'
 import { Modal } from '../ui/Modal'
 import { Icon } from '../ui/Icon'
@@ -16,15 +17,20 @@ import {
   groupSelection,
   isLocalBase,
   isSelected,
+  prLabel,
+  prLookups,
+  prMergedAtTip,
   rangeChoices,
   rememberChecks,
   remoteDeletions,
+  selectedByDefault,
   splitUpstream,
   squashBatches,
   type CleanupRow,
   type CleanupStatus
 } from '../actions/cleanup'
 import { markCleanupSeen, refreshCleanupHint } from '../state/cleanupHints'
+import { useRepoHosting } from '../state/hosting'
 import { parseBranchList } from '../smart/text'
 import { relativeTime } from '../util/format'
 
@@ -51,6 +57,14 @@ const STATUS_TITLE: Record<CleanupStatus, string> = {
 
 type Scan = { kind: 'loading' } | { kind: 'done'; branches: MergedBranch[] } | { kind: 'error'; message: string }
 
+function prTitle(row: CleanupRow): string {
+  const pr = row.pr!
+  if (pr.state === 'closed') return `Pull request #${pr.number} was closed without merging`
+  return prMergedAtTip(row)
+    ? `Pull request #${pr.number} was merged with the commit this branch is at`
+    : `Pull request #${pr.number} was merged, but this branch has commits that never reached it`
+}
+
 /** Above this many branches to compare with, a filter box helps find one */
 const BASE_FILTER_FROM = 15
 
@@ -76,6 +90,9 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
   )
   const [alsoRemote, setAlsoRemote] = useState(saved?.alsoRemote ?? false)
   const [baseFilter, setBaseFilter] = useState('')
+  /** Closed or merged pull requests of upstream-deleted branches, by branch name */
+  const [prs, setPrs] = useState<Record<string, BranchPullRequest>>({})
+  const hosting = useRepoHosting(repo.path)
   const [scan, setScan] = useState<Scan>({ kind: 'loading' })
   const [checks, setChecks] = useState<Record<string, SquashCheck>>({})
   /** Squash checks done out of those needed, while they run */
@@ -154,7 +171,26 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
 
   const branches = scan.kind === 'done' ? scan.branches : []
   const checking = progress !== null
-  const rows = cleanupRows(branches, checks, { checking, currentBranch: repo.status?.branch ?? null, dirty: trackedChanges(repo) })
+  const rows = cleanupRows(branches, checks, { checking, currentBranch: repo.status?.branch ?? null, dirty: trackedChanges(repo), prs })
+  // pull requests of the branches whose work was not found in the base, once the squash checks are done
+  const lookups = checking ? '' : prLookups(rows).join('\n')
+  const hostingRemote = hosting?.connected && hosting.apiSupported ? hosting.remote : null
+  useEffect(() => {
+    const names = lookups.split('\n').filter((n) => n && !(n in prs))
+    if (!hostingRemote || !names.length) return
+    let live = true
+    window.integrations.closedPullRequests(repo.path, hostingRemote, names).then(
+      (found) => {
+        if (live) setPrs((p) => ({ ...p, ...Object.fromEntries(found.map((pr) => [pr.branch, pr])) }))
+      },
+      // a nicety: without it the branches just stay unticked
+      () => undefined
+    )
+    return () => {
+      live = false
+    }
+    // prs is left out on purpose: results arriving must not ask again
+  }, [repo.path, hostingRemote, lookups])
   const groups = groupRows(rows)
   const ordered = groups.flatMap((g) => g.rows)
   if (scan.kind === 'done') shown.current = rows.map((r) => r.branch.name)
@@ -391,10 +427,16 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
                             <span className="ellipsis">{b.name}</span>
                             {tag && <span className="cleanup-tag">{tag}</span>}
                           </span>
-                          <span className={`cleanup-reason ${row.status}`} title={STATUS_TITLE[row.status]}>
-                            {row.status === 'checking' && <span className="spinner small" />}
-                            {STATUS_LABEL[row.status]}
-                          </span>
+                          {row.pr ? (
+                            <span className={`cleanup-reason ${prMergedAtTip(row) ? 'merged' : 'gone'}`} title={prTitle(row)}>
+                              {prLabel(row.pr)}
+                            </span>
+                          ) : (
+                            <span className={`cleanup-reason ${row.status}`} title={STATUS_TITLE[row.status]}>
+                              {row.status === 'checking' && <span className="spinner small" />}
+                              {STATUS_LABEL[row.status]}
+                            </span>
+                          )}
                           {unmerged > 0 ? (
                             <span className="cleanup-meta ellipsis unmerged" title={authored}>
                               {plural(unmerged, 'commit')} not in {baseName}
@@ -438,7 +480,7 @@ function CleanupForm({ repo, initialBase }: { repo: RepoTab; initialBase?: strin
               <span className="field-hint">{selected.length} selected</span>
             </div>
           )}
-          {!checking && rows.some((r) => r.status === 'gone') && (
+          {!checking && rows.some((r) => r.status === 'gone' && !selectedByDefault(r)) && (
             <span className="field-warning">Branches whose upstream was deleted are not selected when they have commits that are not in the base branch.</span>
           )}
 
