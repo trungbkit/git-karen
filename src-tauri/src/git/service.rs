@@ -19,13 +19,18 @@ pub type Res<T> = Result<T, String>;
 
 pub trait Hooks: Send + Sync {
     fn progress(&self, _e: ProgressEvent) {}
-    fn repo_changed(&self, _repo: &str) {}
+    fn repo_changed(&self, _repo: &str, _scope: ChangeScope) {}
 }
 
 #[cfg(test)]
 pub struct NoHooks;
 #[cfg(test)]
 impl Hooks for NoHooks {}
+
+/// Quiet time after the last file-system change before the renderer hears of it.
+const WATCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(300);
+/// Longest a change waits while more keep coming (a long build writing files), so the refresh is not put off forever.
+const WATCH_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Least time between two progress events of the same phase (git rewrites its counters many times a second).
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
@@ -1520,7 +1525,7 @@ impl GitService {
         }
         let hooks = self.hooks.clone();
         let key = repo.to_string();
-        let w = RepoWatcher::start(repo, std::time::Duration::from_millis(300), move || hooks.repo_changed(&key));
+        let w = RepoWatcher::start(repo, WATCH_DEBOUNCE, WATCH_MAX_WAIT, move |scope| hooks.repo_changed(&key, scope));
         watchers.insert(repo.to_string(), w);
     }
 

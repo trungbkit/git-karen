@@ -20,6 +20,7 @@ Karen is a local-first desktop Git client. It talks to the system `git` and, opt
 | Interactive rebase | `GIT_SEQUENCE_EDITOR` set to a command that copies a prepared todo list into place | Lets git drive the rebase |
 | HTTP (hosting, AI) | System `curl`, called from Rust; the `Authorization` header goes through curl's stdin config | No extra TLS stack, honours proxy variables, tokens never reach the webview or the command line |
 | GitHub credentials | A keychain token, or per host `gh auth token` from the GitHub CLI (cached 5 min) | Reuses an existing `gh auth login`; gh only supplies the token, requests still go through curl |
+| Refresh | A recursive watcher (`git/watcher.rs`) reports debounced batches (300 ms quiet, at most 2 s) with a scope: `refs` when HEAD, refs or operation state changed, `worktree` for the index and files. The renderer reloads the log only for `refs`, and runs at most one refresh per repo at a time (`state/coalesce.ts`), folding calls made meanwhile into one follow-up | Saving a file does not reload 2,000 commits, and an older result never lands after a newer one |
 | Secrets | OS keychain via the `keyring` crate | No tokens in config files |
 | Updates | `tauri-plugin-updater` driven from Rust (`updater.rs`): `latest.json` on the latest GitHub release, packages signed with minisign (`requireSignedVersion`). Checks 15 s after launch and every 6 h, downloads in the background, installs on restart | Releases stay plain GitHub releases; a tampered manifest cannot install an unsigned or older build |
 

@@ -17,6 +17,7 @@ import { DEFAULT_PREFERENCES } from '@shared/types'
 import type { PullRequest } from '@shared/integrations'
 import { closeRepoSessions } from './terminals'
 import { clearProgress } from './progress'
+import { coalesce } from './coalesce'
 
 export type Selection =
   | { kind: 'wip' }
@@ -184,6 +185,43 @@ function emptyRepo(path: string): RepoTab {
 
 let toastId = 0
 
+/** One refresh of a repo: status, refs and the rest, plus the log when asked (or when none is loaded yet). */
+async function loadRepo(repo: string, opts: { log: boolean }) {
+  const get = useStore.getState
+  if (!get().repos[repo]) return
+  const { prefs } = get()
+  try {
+    const [status, refs, stashes, remotes, submodules, worktrees, commits] = await Promise.all([
+      window.git.status(repo),
+      window.git.refs(repo),
+      window.git.stashes(repo),
+      window.git.remotes(repo),
+      window.git.submodules(repo).catch(() => []),
+      window.git.worktrees(repo).catch(() => []),
+      opts.log || get().repos[repo].commits.length === 0 ? window.git.log(repo, { limit: prefs.commitLimit }) : Promise.resolve(null)
+    ])
+    get().updateRepo(repo, {
+      status,
+      refs,
+      stashes,
+      remotes,
+      submodules,
+      worktrees,
+      ...(commits ? { commits } : {}),
+      loading: false,
+      error: null
+    })
+  } catch (e) {
+    get().updateRepo(repo, { loading: false, error: (e as Error).message })
+  }
+}
+
+/**
+ * Refreshes never overlap per repo (an older result could otherwise land after a newer one): calls made while one
+ * runs share a single follow-up run, which loads the log if any of them asked for it.
+ */
+const queueRefresh = coalesce(loadRepo, (a: { log: boolean }, b: { log: boolean }) => ({ log: a.log || b.log }))
+
 /**
  * Builds the toast of a failed `run`. actions/errorActions.ts replaces it with one that explains common git errors
  * and offers fixes (it needs the repo actions, which import this module).
@@ -232,8 +270,9 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       if (state.activeTab && get().tabs.includes(state.activeTab)) set({ activeTab: state.activeTab })
     }
-    window.app.onRepoChanged((repo) => {
-      if (get().repos[repo]) void get().refresh(repo, { log: true })
+    // the watcher says whether the history may have moved; a saved file only changes the status
+    window.app.onRepoChanged(({ repo, scope }) => {
+      if (get().repos[repo]) void get().refresh(repo, { log: scope === 'refs' })
     })
     set({ restored: true })
   },
@@ -298,36 +337,10 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ workspaces: await window.app.setWorkspaces(workspaces) })
   },
 
-  async refresh(path, opts = {}) {
+  refresh(path, opts = {}) {
     const repo = path ?? get().activeTab
-    if (!get().repos[repo]) return
-    const { prefs } = get()
-    try {
-      const [status, refs, stashes, remotes, submodules, worktrees, commits] = await Promise.all([
-        window.git.status(repo),
-        window.git.refs(repo),
-        window.git.stashes(repo),
-        window.git.remotes(repo),
-        window.git.submodules(repo).catch(() => []),
-        window.git.worktrees(repo).catch(() => []),
-        opts.log || get().repos[repo].commits.length === 0
-          ? window.git.log(repo, { limit: prefs.commitLimit })
-          : Promise.resolve(null)
-      ])
-      get().updateRepo(repo, {
-        status,
-        refs,
-        stashes,
-        remotes,
-        submodules,
-        worktrees,
-        ...(commits ? { commits } : {}),
-        loading: false,
-        error: null
-      })
-    } catch (e) {
-      get().updateRepo(repo, { loading: false, error: (e as Error).message })
-    }
+    if (!get().repos[repo]) return Promise.resolve()
+    return queueRefresh(repo, { log: !!opts.log })
   },
 
   select(selection, path) {

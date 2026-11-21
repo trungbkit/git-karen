@@ -31,7 +31,7 @@ use ai::AiStore;
 use app_state::AppStateStore;
 use git::service::{Args, GitService, Hooks};
 use terminal::{PtyManager, TermEvent};
-use types::ProgressEvent;
+use types::{ChangeScope, ProgressEvent, RepoChangedEvent};
 
 const EVT_REPO_CHANGED: &str = "evt:repoChanged";
 const EVT_PROGRESS: &str = "evt:progress";
@@ -51,8 +51,8 @@ impl Hooks for EmitHooks {
     fn progress(&self, e: ProgressEvent) {
         let _ = self.0.emit(EVT_PROGRESS, e);
     }
-    fn repo_changed(&self, repo: &str) {
-        let _ = self.0.emit(EVT_REPO_CHANGED, repo);
+    fn repo_changed(&self, repo: &str, scope: ChangeScope) {
+        let _ = self.0.emit(EVT_REPO_CHANGED, RepoChangedEvent { repo: repo.to_string(), scope });
     }
 }
 

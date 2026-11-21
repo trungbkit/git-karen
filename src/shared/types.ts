@@ -584,6 +584,13 @@ export interface AppState {
   workspaces: Workspace[]
 }
 
+/** A debounced batch of file-system changes in an open repo. `refs`: HEAD, branches, tags or stashes moved (reload the
+ * history); `worktree`: only the index or work-tree files changed (the status is enough). */
+export interface RepoChangedEvent {
+  repo: string
+  scope: 'refs' | 'worktree'
+}
+
 /** Long-running git output streamed to the renderer (fetch/pull/push/clone progress). */
 export interface ProgressEvent {
   repo: string
@@ -887,7 +894,7 @@ export interface AppApi {
   /** Link the command line tool onto the PATH; fails with the command to run by hand when not permitted */
   installCli(): Promise<CliStatus>
   /** Subscribe to repo file-system changes (debounced). Returns an unsubscribe fn. */
-  onRepoChanged(cb: (repo: string) => void): () => void
+  onRepoChanged(cb: (e: RepoChangedEvent) => void): () => void
   onProgress(cb: (e: ProgressEvent) => void): () => void
   /** Menu / global commands dispatched from the main process (e.g. "view:toggleFuzzyFinder") */
   onCommand(cb: (command: string) => void): () => void

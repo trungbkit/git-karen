@@ -317,6 +317,23 @@ pub struct GitflowConfig {
     pub version_tag: String,
 }
 
+/// What a batch of file-system changes in a repository touched, so the renderer reloads only what may have changed.
+/// Ordered: a batch with any `Refs` change is `Refs`.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeScope {
+    /// The index or files of the work tree: the status may have changed, the history has not
+    Worktree,
+    /// HEAD, branches, tags, stashes or an operation in progress: the history may have changed too
+    Refs,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct RepoChangedEvent {
+    pub repo: String,
+    pub scope: ChangeScope,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct ProgressEvent {
     pub repo: String,
