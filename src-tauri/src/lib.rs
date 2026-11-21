@@ -173,12 +173,14 @@ async fn app_call(
 #[tauri::command]
 async fn ai_call(backend: State<'_, Backend>, method: String, args: Vec<Value>) -> Result<Value, String> {
     let a = Args(args);
-    // the lock is never held across an await: requests can take as long as the provider's timeout
-    let snapshot = || backend.ai.lock().unwrap().snapshot();
+    // the lock is never held across an await: requests can take as long as the provider's timeout. Keychain access
+    // blocks (and may show a system dialog), so it leaves the async worker.
+    let snapshot = || tokio::task::block_in_place(|| backend.ai.lock().unwrap().snapshot());
     match method.as_str() {
         "status" => to_value(snapshot().status().await),
         "update" => {
-            backend.ai.lock().unwrap().update(a.get(0)?, a.get(1)?)?;
+            let (settings, secrets) = (a.get(0)?, a.get(1)?);
+            tokio::task::block_in_place(|| backend.ai.lock().unwrap().update(settings, secrets))?;
             to_value(snapshot().status().await)
         }
         "verify" => to_value(snapshot().verify(&a.get::<String>(0)?, a.get(1)?).await?),

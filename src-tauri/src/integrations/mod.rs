@@ -448,7 +448,7 @@ async fn checkout_pr(repo: &str, remote: &str, kind: Kind, number: u64, head_bra
 
 impl Integrations {
     pub fn new(file: PathBuf) -> Self {
-        Self::with_store(file, Arc::new(Keychain))
+        Self::with_store(file, Arc::new(Keychain::HOSTING))
     }
 
     pub fn with_store(file: PathBuf, secrets: Arc<dyn SecretStore>) -> Self {

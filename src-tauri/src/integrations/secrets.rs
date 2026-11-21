@@ -1,50 +1,64 @@
-// Hosting tokens in the OS credential store (macOS Keychain, Windows Credential Manager, Secret Service on Linux),
-// one entry per host. Nothing here writes a token to disk or hands it to the webview.
-const SERVICE: &str = "Karen hosting";
-/// Where tokens lived before the app was renamed; moved to SERVICE the first time they're read.
-const LEGACY_SERVICE: &str = "Kraken Craft hosting";
+// Secrets in the OS credential store (macOS Keychain, Windows Credential Manager, Secret Service on Linux): hosting
+// tokens, one entry per host, and AI provider keys, one entry per credential. Nothing here writes a secret to disk or
+// hands it to the webview.
 
 pub trait SecretStore: Send + Sync {
-    fn get(&self, host: &str) -> Result<Option<String>, String>;
-    fn set(&self, host: &str, token: &str) -> Result<(), String>;
-    fn delete(&self, host: &str) -> Result<(), String>;
+    fn get(&self, account: &str) -> Result<Option<String>, String>;
+    fn set(&self, account: &str, secret: &str) -> Result<(), String>;
+    fn delete(&self, account: &str) -> Result<(), String>;
 }
 
-pub struct Keychain;
-
-fn entry(host: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, host).map_err(|e| format!("Keychain unavailable: {e}"))
+/// One service (a group of entries) in the OS credential store.
+pub struct Keychain {
+    service: &'static str,
+    /// Where the entries lived before the app was renamed; moved to `service` the first time they're read.
+    legacy: Option<&'static str>,
+    /// What an entry is, for error messages: "the {noun} {account}"
+    noun: &'static str,
 }
 
-fn take_legacy(host: &str) -> Option<String> {
-    let old = keyring::Entry::new(LEGACY_SERVICE, host).ok()?;
-    let token = old.get_password().ok()?;
-    if entry(host).and_then(|e| e.set_password(&token).map_err(|e| e.to_string())).is_ok() {
-        let _ = old.delete_credential();
+impl Keychain {
+    /// Hosting tokens, keyed by host.
+    pub const HOSTING: Keychain = Keychain { service: "Karen hosting", legacy: Some("Kraken Craft hosting"), noun: "token for" };
+    /// AI provider keys, keyed by credential name (`anthropicApiKey`, ...).
+    pub const AI: Keychain = Keychain { service: "Karen AI", legacy: None, noun: "AI key" };
+
+    fn entry(&self, account: &str) -> Result<keyring::Entry, String> {
+        keyring::Entry::new(self.service, account).map_err(|e| format!("Keychain unavailable: {e}"))
     }
-    Some(token)
+
+    fn take_legacy(&self, account: &str) -> Option<String> {
+        let old = keyring::Entry::new(self.legacy?, account).ok()?;
+        let secret = old.get_password().ok()?;
+        if self.entry(account).and_then(|e| e.set_password(&secret).map_err(|e| e.to_string())).is_ok() {
+            let _ = old.delete_credential();
+        }
+        Some(secret)
+    }
 }
 
 impl SecretStore for Keychain {
-    fn get(&self, host: &str) -> Result<Option<String>, String> {
-        match entry(host)?.get_password() {
+    fn get(&self, account: &str) -> Result<Option<String>, String> {
+        match self.entry(account)?.get_password() {
             Ok(t) => Ok(Some(t)),
-            Err(keyring::Error::NoEntry) => Ok(take_legacy(host)),
-            Err(e) => Err(format!("Could not read the token for {host} from the keychain: {e}")),
+            Err(keyring::Error::NoEntry) => Ok(self.take_legacy(account)),
+            Err(e) => Err(format!("Could not read the {} {account} from the keychain: {e}", self.noun)),
         }
     }
 
-    fn set(&self, host: &str, token: &str) -> Result<(), String> {
-        entry(host)?.set_password(token).map_err(|e| format!("Could not save the token for {host} in the keychain: {e}"))
+    fn set(&self, account: &str, secret: &str) -> Result<(), String> {
+        self.entry(account)?
+            .set_password(secret)
+            .map_err(|e| format!("Could not save the {} {account} in the keychain: {e}", self.noun))
     }
 
-    fn delete(&self, host: &str) -> Result<(), String> {
-        if let Ok(old) = keyring::Entry::new(LEGACY_SERVICE, host) {
+    fn delete(&self, account: &str) -> Result<(), String> {
+        if let Some(Ok(old)) = self.legacy.map(|l| keyring::Entry::new(l, account)) {
             let _ = old.delete_credential();
         }
-        match entry(host)?.delete_credential() {
+        match self.entry(account)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(format!("Could not remove the token for {host} from the keychain: {e}")),
+            Err(e) => Err(format!("Could not remove the {} {account} from the keychain: {e}", self.noun)),
         }
     }
 }
@@ -56,15 +70,15 @@ pub struct MemoryStore(pub std::sync::Mutex<std::collections::HashMap<String, St
 
 #[cfg(test)]
 impl SecretStore for MemoryStore {
-    fn get(&self, host: &str) -> Result<Option<String>, String> {
-        Ok(self.0.lock().unwrap().get(host).cloned())
+    fn get(&self, account: &str) -> Result<Option<String>, String> {
+        Ok(self.0.lock().unwrap().get(account).cloned())
     }
-    fn set(&self, host: &str, token: &str) -> Result<(), String> {
-        self.0.lock().unwrap().insert(host.into(), token.into());
+    fn set(&self, account: &str, secret: &str) -> Result<(), String> {
+        self.0.lock().unwrap().insert(account.into(), secret.into());
         Ok(())
     }
-    fn delete(&self, host: &str) -> Result<(), String> {
-        self.0.lock().unwrap().remove(host);
+    fn delete(&self, account: &str) -> Result<(), String> {
+        self.0.lock().unwrap().remove(account);
         Ok(())
     }
 }

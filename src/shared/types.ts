@@ -978,7 +978,8 @@ export interface AiSettings {
 export interface AiStatus {
   settings: AiSettings
   /** Where each credential comes from. Keys never leave the backend; `hint` is masked or an env var name. */
-  secrets: Record<AiCredential, { source: 'app' | 'env' | null; hint: string | null }>
+  /** Where each credential comes from: saved in the keychain, saved in ai.json (the keychain could not be used), or the environment */
+  secrets: Record<AiCredential, { source: 'keychain' | 'file' | 'env' | null; hint: string | null }>
   /** The provider requests go to, or null when no credential is available */
   active: { provider: AiProvider; model: string; credential: AiCredential } | null
   defaultModels: Record<AiProvider, string>

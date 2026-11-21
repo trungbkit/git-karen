@@ -1,11 +1,12 @@
 // AI provider access for commit messages and pull request texts (Claude, OpenAI or Gemini, with the user's own key).
-// Keys live in their own file (owner-only permissions) and never cross into the renderer: it only learns where each
-// one comes from. Anything not set in the app falls back to the environment, including the login shell's, since a GUI
+// Keys live in the OS keychain (or, when it can't be used, in ai.json with owner-only permissions) and never cross
+// into the renderer: it only learns where each one comes from. Anything not set in the app falls back to the environment, including the login shell's, since a GUI
 // app doesn't inherit what ~/.zshrc exports. Requests go through the system curl, which brings proxy support
 // (HTTPS_PROXY, NO_PROXY) with it.
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,7 @@ use serde_json::{json, Map, Value};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+use crate::integrations::secrets::{Keychain, SecretStore};
 use crate::shell_env;
 
 pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-haiku-5-5";
@@ -70,12 +72,19 @@ impl Default for AiSettings {
 #[serde(default)]
 struct AiFile {
     settings: AiSettings,
+    /// Keys kept in this file: those saved by versions before the keychain, until they move, and those the keychain
+    /// refused to store
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     secrets: BTreeMap<String, String>,
+    /// Names of the credentials stored in the keychain (never the keys), so only those entries are read
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    keychain: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct SecretInfo {
-    /// "app", "env", or None when the credential isn't available
+    /// "keychain", "file" (saved in the app, but the keychain could not be used), "env", or None when the
+    /// credential isn't available
     pub source: Option<&'static str>,
     /// Masked key ("…a1b2") or the environment variable it was read from
     pub hint: Option<String>,
@@ -133,6 +142,9 @@ pub(crate) async fn proxy_env() -> Vec<(String, String)> {
 pub struct AiStore {
     file: PathBuf,
     data: AiFile,
+    store: Arc<dyn SecretStore>,
+    /// The keys in use, read from the keychain (or the file) the first time they're needed, by credential name
+    loaded: Option<BTreeMap<String, (String, &'static str)>>,
 }
 
 fn mask(secret: &str) -> String {
@@ -169,8 +181,12 @@ impl Resolved {
 
 impl AiStore {
     pub fn new(file: PathBuf) -> Self {
+        Self::with_store(file, Arc::new(Keychain::AI))
+    }
+
+    pub fn with_store(file: PathBuf, store: Arc<dyn SecretStore>) -> Self {
         let data = std::fs::read_to_string(&file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-        AiStore { file, data }
+        AiStore { file, data, store, loaded: None }
     }
 
     fn save(&self) -> Result<(), String> {
@@ -187,8 +203,78 @@ impl AiStore {
         std::fs::rename(&tmp, &self.file).map_err(|e| e.to_string())
     }
 
+    /// Read the stored keys once: the keychain entries listed in the file, then the keys in the file itself, each
+    /// moved into the keychain when it takes them. A key leaves the file only after the keychain has it, so no error
+    /// loses one.
+    fn load(&mut self) -> &BTreeMap<String, (String, &'static str)> {
+        if self.loaded.is_none() {
+            let mut keys = BTreeMap::new();
+            for name in &self.data.keychain {
+                // an entry that can't be read (keychain locked, access denied) is left listed for the next start
+                if let Ok(Some(v)) = self.store.get(name) {
+                    keys.insert(name.clone(), (v, "keychain"));
+                }
+            }
+            let mut moved = false;
+            for (name, v) in std::mem::take(&mut self.data.secrets) {
+                if self.store.set(&name, &v).is_ok() {
+                    if !self.data.keychain.contains(&name) {
+                        self.data.keychain.push(name.clone());
+                    }
+                    keys.insert(name, (v, "keychain"));
+                    moved = true;
+                } else {
+                    self.data.secrets.insert(name.clone(), v.clone());
+                    keys.insert(name, (v, "file"));
+                }
+            }
+            // if this save fails the file keeps the moved keys until the next save; moving them again is harmless
+            if moved {
+                let _ = self.save();
+            }
+            self.loaded = Some(keys);
+        }
+        self.loaded.as_ref().expect("loaded above")
+    }
+
+    /// Store one key: in the keychain, or in the file when the keychain refuses it.
+    fn set_secret(&mut self, name: &str, value: String) {
+        self.load();
+        let source = if self.store.set(name, &value).is_ok() {
+            self.data.secrets.remove(name);
+            if !self.data.keychain.iter().any(|n| n == name) {
+                self.data.keychain.push(name.into());
+            }
+            "keychain"
+        } else {
+            // an older key in the keychain must not come back on the next start
+            if self.data.keychain.iter().any(|n| n == name) && self.store.delete(name).is_ok() {
+                self.data.keychain.retain(|n| n != name);
+            }
+            self.data.secrets.insert(name.into(), value.clone());
+            "file"
+        };
+        self.loaded.as_mut().expect("loaded above").insert(name.into(), (value, source));
+    }
+
+    /// Remove one key from wherever it is stored.
+    fn clear_secret(&mut self, name: &str) -> Result<(), String> {
+        self.load();
+        self.loaded.as_mut().expect("loaded above").remove(name);
+        self.data.secrets.remove(name);
+        if self.data.keychain.iter().any(|n| n == name) {
+            self.store.delete(name)?;
+            self.data.keychain.retain(|n| n != name);
+        }
+        Ok(())
+    }
+
     /// Merge a partial settings object, and set (string) or clear (null / empty) secrets.
     pub fn update(&mut self, settings: Option<Map<String, Value>>, secrets: Option<Map<String, Value>>) -> Result<(), String> {
+        let secrets = secrets.unwrap_or_default();
+        if let Some(name) = secrets.keys().find(|name| !SECRETS.iter().any(|(n, _)| n == name)) {
+            return Err(format!("Unknown credential: {name}"));
+        }
         if let Some(patch) = settings {
             let mut current = serde_json::to_value(&self.data.settings).map_err(|e| e.to_string())?;
             let obj = current.as_object_mut().expect("settings serialize to an object");
@@ -203,34 +289,39 @@ impl AiStore {
             }
             self.data.settings = AiSettings { timeout_seconds: next.timeout_seconds.clamp(5, 600), attempts: next.attempts.clamp(1, 10), ..next };
         }
-        for (name, value) in secrets.unwrap_or_default() {
-            if !SECRETS.iter().any(|(n, _)| *n == name) {
-                return Err(format!("Unknown credential: {name}"));
-            }
+        let mut failed = None;
+        for (name, value) in secrets {
             match value.as_str().and_then(non_empty) {
-                Some(v) => self.data.secrets.insert(name, v),
-                None => self.data.secrets.remove(&name),
-            };
+                Some(v) => self.set_secret(&name, v),
+                None => {
+                    if let Err(e) = self.clear_secret(&name) {
+                        failed.get_or_insert(e);
+                    }
+                }
+            }
         }
-        self.save()
+        self.save()?;
+        failed.map_or(Ok(()), Err)
     }
 
-    /// A snapshot that can be used without holding the store's lock.
-    pub fn snapshot(&self) -> AiSnapshot {
-        AiSnapshot { settings: self.data.settings.clone(), secrets: self.data.secrets.clone() }
+    /// A snapshot that can be used without holding the store's lock. The first one reads the keychain.
+    pub fn snapshot(&mut self) -> AiSnapshot {
+        let secrets = self.load().clone();
+        AiSnapshot { settings: self.data.settings.clone(), secrets }
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct AiSnapshot {
     settings: AiSettings,
-    secrets: BTreeMap<String, String>,
+    /// Stored keys and where each one is kept ("keychain" or "file")
+    secrets: BTreeMap<String, (String, &'static str)>,
 }
 
 impl AiSnapshot {
     async fn secret(&self, name: &str) -> Option<(String, &'static str, String)> {
-        if let Some(v) = self.secrets.get(name).and_then(|v| non_empty(v)) {
-            return Some((v.clone(), "app", mask(&v)));
+        if let Some((v, source)) = self.secrets.get(name).and_then(|(v, src)| Some((non_empty(v)?, *src))) {
+            return Some((v.clone(), source, mask(&v)));
         }
         let vars = SECRETS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v).unwrap_or(&[]);
         for var in vars {
@@ -591,13 +682,36 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+
+    use crate::integrations::secrets::MemoryStore;
 
     fn snapshot(provider: &str, secrets: &[(&str, &str)]) -> AiSnapshot {
         AiSnapshot {
             settings: AiSettings { provider: provider.into(), ..Default::default() },
-            secrets: secrets.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            secrets: secrets.iter().map(|(k, v)| (k.to_string(), (v.to_string(), "keychain"))).collect(),
         }
+    }
+
+    /// A keychain that refuses everything (Linux without a Secret Service, a locked keychain).
+    struct BrokenStore;
+    impl SecretStore for BrokenStore {
+        fn get(&self, _: &str) -> Result<Option<String>, String> {
+            Err("no keychain".into())
+        }
+        fn set(&self, _: &str, _: &str) -> Result<(), String> {
+            Err("no keychain".into())
+        }
+        fn delete(&self, _: &str) -> Result<(), String> {
+            Err("no keychain".into())
+        }
+    }
+
+    fn memory() -> Arc<MemoryStore> {
+        Arc::new(MemoryStore::default())
+    }
+
+    fn file_text(dir: &tempfile::TempDir) -> String {
+        std::fs::read_to_string(dir.path().join("ai.json")).unwrap()
     }
 
     #[tokio::test]
@@ -615,25 +729,27 @@ mod tests {
         let s = snapshot("openai", &[("openaiApiKey", "sk-secret-1234")]);
         let status = s.status().await;
         let info = &status.secrets["openaiApiKey"];
-        assert_eq!(info.source, Some("app"));
+        assert_eq!(info.source, Some("keychain"));
         assert_eq!(info.hint.as_deref(), Some("…1234"));
         assert!(!serde_json::to_string(&status).unwrap().contains("sk-secret"));
         assert_eq!(status.active.unwrap().provider, "openai");
     }
 
     #[test]
-    fn update_merges_settings_and_clears_secrets() {
+    fn update_merges_settings_and_keeps_keys_in_the_keychain() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = AiStore::new(dir.path().join("ai.json"));
+        let keys = memory();
+        let mut store = AiStore::with_store(dir.path().join("ai.json"), keys.clone());
         let settings = json!({ "provider": "openai", "openaiModel": "m", "timeoutSeconds": 1, "bogus": 1 });
         store.update(settings.as_object().cloned(), json!({ "openaiApiKey": " k " }).as_object().cloned()).unwrap();
         assert_eq!(store.data.settings.provider, "openai");
         assert_eq!(store.data.settings.openai_model, "m");
         assert_eq!(store.data.settings.timeout_seconds, 5);
-        assert_eq!(store.data.secrets["openaiApiKey"], "k");
+        assert_eq!(keys.get("openaiApiKey").unwrap().as_deref(), Some("k"));
+        assert!(!file_text(&dir).contains("\"k\""), "the key must not reach ai.json");
 
-        let reloaded = AiStore::new(dir.path().join("ai.json"));
-        assert_eq!(reloaded.data.secrets["openaiApiKey"], "k");
+        let mut reloaded = AiStore::with_store(dir.path().join("ai.json"), keys.clone());
+        assert_eq!(reloaded.snapshot().secrets["openaiApiKey"], ("k".to_string(), "keychain"));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -642,9 +758,93 @@ mod tests {
         }
 
         store.update(None, json!({ "openaiApiKey": null }).as_object().cloned()).unwrap();
-        assert!(store.data.secrets.is_empty());
+        assert!(store.snapshot().secrets.is_empty());
+        assert_eq!(keys.get("openaiApiKey").unwrap(), None);
+        assert!(store.data.keychain.is_empty());
         assert!(store.update(json!({ "provider": "x" }).as_object().cloned(), None).is_err());
         assert!(store.update(None, json!({ "nope": "k" }).as_object().cloned()).is_err());
+    }
+
+    #[test]
+    fn moves_keys_from_an_older_file_into_the_keychain() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = json!({ "settings": { "provider": "gemini" }, "secrets": { "geminiApiKey": "g-old", "openaiApiKey": "o-old" } });
+        std::fs::write(dir.path().join("ai.json"), old.to_string()).unwrap();
+        let keys = memory();
+        let mut store = AiStore::with_store(dir.path().join("ai.json"), keys.clone());
+        let snap = store.snapshot();
+        assert_eq!(snap.secrets["geminiApiKey"], ("g-old".to_string(), "keychain"));
+        assert_eq!(snap.settings.provider, "gemini");
+        assert_eq!(keys.get("openaiApiKey").unwrap().as_deref(), Some("o-old"));
+        let text = file_text(&dir);
+        assert!(!text.contains("g-old") && !text.contains("o-old"), "moved keys leave the file: {text}");
+
+        // a later start reads them back from the keychain alone
+        let mut again = AiStore::with_store(dir.path().join("ai.json"), keys);
+        assert_eq!(again.snapshot().secrets["openaiApiKey"], ("o-old".to_string(), "keychain"));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_the_file_when_the_keychain_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = json!({ "secrets": { "geminiApiKey": "g-old" } });
+        std::fs::write(dir.path().join("ai.json"), old.to_string()).unwrap();
+        let mut store = AiStore::with_store(dir.path().join("ai.json"), Arc::new(BrokenStore));
+        // an older key stays usable and stays in the file
+        assert_eq!(store.snapshot().secrets["geminiApiKey"], ("g-old".to_string(), "file"));
+        assert!(file_text(&dir).contains("g-old"));
+
+        store.update(None, json!({ "openaiApiKey": "o-new" }).as_object().cloned()).unwrap();
+        assert!(file_text(&dir).contains("o-new"));
+        let status = store.snapshot().status().await;
+        assert_eq!(status.secrets["openaiApiKey"].source, Some("file"));
+        assert_eq!(status.secrets["openaiApiKey"].hint.as_deref(), Some("…-new"));
+        assert!(!serde_json::to_string(&status).unwrap().contains("o-new"));
+
+        // clearing a key that only lives in the file needs no keychain
+        store.update(None, json!({ "geminiApiKey": null }).as_object().cloned()).unwrap();
+        assert!(!file_text(&dir).contains("g-old"));
+        let reloaded = AiStore::with_store(dir.path().join("ai.json"), Arc::new(BrokenStore));
+        assert_eq!(reloaded.data.secrets.keys().collect::<Vec<_>>(), ["openaiApiKey"]);
+    }
+
+    #[test]
+    fn an_unreadable_keychain_entry_stays_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ai.json"), json!({ "keychain": ["openaiApiKey"] }).to_string()).unwrap();
+        let mut store = AiStore::with_store(dir.path().join("ai.json"), Arc::new(BrokenStore));
+        assert!(store.snapshot().secrets.is_empty());
+        store.update(json!({ "provider": "openai" }).as_object().cloned(), None).unwrap();
+        // a locked keychain at one start must not forget the key for the next
+        assert!(file_text(&dir).contains("openaiApiKey"));
+    }
+
+    #[test]
+    fn a_new_key_the_keychain_refuses_replaces_the_older_keychain_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let keys = memory();
+        let mut store = AiStore::with_store(dir.path().join("ai.json"), keys.clone());
+        store.update(None, json!({ "openaiApiKey": "first" }).as_object().cloned()).unwrap();
+        // the same file opened with a keychain that now refuses writes but still allows deletes
+        struct ReadOnly(Arc<MemoryStore>);
+        impl SecretStore for ReadOnly {
+            fn get(&self, a: &str) -> Result<Option<String>, String> {
+                self.0.get(a)
+            }
+            fn set(&self, _: &str, _: &str) -> Result<(), String> {
+                Err("read only".into())
+            }
+            fn delete(&self, a: &str) -> Result<(), String> {
+                self.0.delete(a)
+            }
+        }
+        let mut store = AiStore::with_store(dir.path().join("ai.json"), Arc::new(ReadOnly(keys.clone())));
+        store.update(None, json!({ "openaiApiKey": "second" }).as_object().cloned()).unwrap();
+        assert_eq!(keys.get("openaiApiKey").unwrap(), None);
+        // the newer key wins, and moves into the keychain once it accepts writes again
+        let mut reloaded = AiStore::with_store(dir.path().join("ai.json"), keys.clone());
+        assert_eq!(reloaded.snapshot().secrets["openaiApiKey"], ("second".to_string(), "keychain"));
+        assert_eq!(keys.get("openaiApiKey").unwrap().as_deref(), Some("second"));
     }
 
     #[tokio::test]

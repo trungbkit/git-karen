@@ -12,6 +12,7 @@ Each feature below has unit or integration tests, but nobody has clicked through
 - Stopping a clone of a large repository, a fetch and a push from the toolbar; committing while a fetch hangs.
 - The error boundaries: temporarily throw in `DiffView`, `LeftPanel` and a dialog and check the rest of the window keeps working.
 - The file watcher on Linux (one inotify watch per folder that is not ignored), and the "Automatic refresh is off" toast after lowering `fs.inotify.max_user_watches`.
+- AI keys in the keychain: save a key in Preferences > AI and check `ai.json` no longer holds it; upgrade from a build that kept keys in `ai.json` and check AI still works and the file loses the keys; on Linux without a Secret Service, check the "saved in a file" warning. After an update of an ad-hoc signed macOS build, see whether the keychain asks again before reading the key.
 - Undo toasts for each dangerous action.
 - Keyboard-only hunk staging, and the stage → commit → push flow without a mouse.
 - Compare view (two commits; branch against the default branch).

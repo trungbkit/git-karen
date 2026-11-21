@@ -483,7 +483,7 @@ export function PreferencesModal() {
               </Field>
               <h3>Credentials</h3>
               <span className="hint">
-                Stored in a file only you can read and never shown again. Leave a field empty to use the environment variable (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY,
+                Stored in the system keychain and never shown again. Leave a field empty to use the environment variable (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY,
                 OPENAI_API_KEY, GEMINI_API_KEY), including ones exported from your shell profile.
               </span>
               {AI_CREDENTIALS.map((c) => {
@@ -492,9 +492,10 @@ export function PreferencesModal() {
                 const typed = secrets[c.id] ?? ''
                 const problem = keyProblem(c.id, typed)
                 const test = keyTests[c.id]
+                const saved = info.source === 'keychain' || info.source === 'file'
                 const placeholder = cleared
                   ? 'Will be removed'
-                  : info.source === 'app'
+                  : saved
                     ? `Saved (${info.hint})`
                     : info.source === 'env'
                       ? `From $${info.hint}`
@@ -522,7 +523,7 @@ export function PreferencesModal() {
                         >
                           Test
                         </button>
-                        {info.source === 'app' && !cleared && (
+                        {saved && !cleared && (
                           <button className="btn small" onClick={() => setSecrets((s) => ({ ...s, [c.id]: null }))}>
                             Remove
                           </button>
@@ -535,6 +536,9 @@ export function PreferencesModal() {
                       </div>
                     </Field>
                     {problem && <span className="field-warning">{problem}</span>}
+                    {info.source === 'file' && !cleared && (
+                      <span className="field-warning">The system keychain could not be used, so this key is saved in a file only you can read.</span>
+                    )}
                     {test && <span className={test.state === 'error' ? 'field-error' : 'hint'}>{test.message}</span>}
                   </div>
                 )
