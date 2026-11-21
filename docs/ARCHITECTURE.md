@@ -27,7 +27,7 @@ Karen is a local-first desktop Git client. It talks to the system `git` and, opt
 | Updates | `tauri-plugin-updater` driven from Rust (`updater.rs`): `latest.json` on the latest GitHub release, packages signed with minisign (`requireSignedVersion`). Checks 15 s after launch and every 6 h, downloads in the background, installs on restart | Releases stay plain GitHub releases; a tampered manifest cannot install an unsigned or older build |
 
 ## Conventions
-- New git commands live in `src-tauri/src/git/`. Declare them in `src/shared/commands.ts` and `src/shared/types.ts`, and expose them in `src/renderer/src/platform/bridge.ts`.
+- New git commands live in `src-tauri/src/git/`. Declare them in `src/shared/commands.ts` and `src/shared/types.ts`, list them in `GIT_METHODS` (`src/shared/gitMethods.ts`) and add the arm in `GitService::call`. `platform/ipcContract.test.ts` fails when the renderer and a Rust dispatcher (`git_call`, `app_call`, `ai_call`, `integrations_call`) disagree on a method name.
 - User actions go through `src/renderer/src/actions/` and `keybindings.ts`, so the menu, command palette and shortcuts share one implementation.
 - New preferences go in `PreferencesModal.tsx` and the `prefs` state in `state/store.ts`.
 - Pure logic (layout, parsers, text) gets vitest tests; Rust parsers get `cargo test`. Git operations get integration tests against real temporary repositories.
