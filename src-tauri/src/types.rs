@@ -335,6 +335,12 @@ pub struct RepoChangedEvent {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct WatchFailedEvent {
+    pub repo: String,
+    pub message: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct ProgressEvent {
     pub repo: String,
     pub op: String,

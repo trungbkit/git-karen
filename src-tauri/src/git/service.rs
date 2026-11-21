@@ -12,7 +12,7 @@ use tokio::sync::OwnedMutexGuard;
 use super::exec::{git, LineSink, Opts, Output};
 use super::parse::*;
 use super::recovery::rev_arg;
-use super::watcher::RepoWatcher;
+use super::watcher::{RepoWatcher, WatchConfig, WatchEvent};
 use crate::types::*;
 
 pub type Res<T> = Result<T, String>;
@@ -20,6 +20,8 @@ pub type Res<T> = Result<T, String>;
 pub trait Hooks: Send + Sync {
     fn progress(&self, _e: ProgressEvent) {}
     fn repo_changed(&self, _repo: &str, _scope: ChangeScope) {}
+    /// The repo cannot be watched (fully): automatic refresh is off or incomplete
+    fn watch_failed(&self, _repo: &str, _message: &str) {}
 }
 
 #[cfg(test)]
@@ -1525,7 +1527,10 @@ impl GitService {
         }
         let hooks = self.hooks.clone();
         let key = repo.to_string();
-        let w = RepoWatcher::start(repo, WATCH_DEBOUNCE, WATCH_MAX_WAIT, move |scope| hooks.repo_changed(&key, scope));
+        let w = RepoWatcher::start(repo, WatchConfig::new(WATCH_DEBOUNCE, WATCH_MAX_WAIT), move |e| match e {
+            WatchEvent::Changed(scope) => hooks.repo_changed(&key, scope),
+            WatchEvent::Failed(message) => hooks.watch_failed(&key, &message),
+        });
         watchers.insert(repo.to_string(), w);
     }
 

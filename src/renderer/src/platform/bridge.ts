@@ -103,6 +103,7 @@ const app: AppApi = {
   installUpdate: () => appCall('installUpdate'),
   onUpdateStatus: (cb) => subscribe(IPC.update, cb),
   onRepoChanged: (cb) => subscribe(IPC.repoChanged, cb),
+  onWatchFailed: (cb) => subscribe(IPC.watchFailed, cb),
   onProgress: (cb) => subscribe(IPC.progress, cb),
   onCommand: (cb) => subscribe<string>(IPC.command, cb),
   onFullscreenChange(cb) {

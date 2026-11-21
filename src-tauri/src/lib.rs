@@ -31,10 +31,11 @@ use ai::AiStore;
 use app_state::AppStateStore;
 use git::service::{Args, GitService, Hooks};
 use terminal::{PtyManager, TermEvent};
-use types::{ChangeScope, ProgressEvent, RepoChangedEvent};
+use types::{ChangeScope, ProgressEvent, RepoChangedEvent, WatchFailedEvent};
 
 const EVT_REPO_CHANGED: &str = "evt:repoChanged";
 const EVT_PROGRESS: &str = "evt:progress";
+const EVT_WATCH_FAILED: &str = "evt:watchFailed";
 
 pub struct Backend {
     git: Arc<GitService>,
@@ -53,6 +54,9 @@ impl Hooks for EmitHooks {
     }
     fn repo_changed(&self, repo: &str, scope: ChangeScope) {
         let _ = self.0.emit(EVT_REPO_CHANGED, RepoChangedEvent { repo: repo.to_string(), scope });
+    }
+    fn watch_failed(&self, repo: &str, message: &str) {
+        let _ = self.0.emit(EVT_WATCH_FAILED, WatchFailedEvent { repo: repo.to_string(), message: message.to_string() });
     }
 }
 

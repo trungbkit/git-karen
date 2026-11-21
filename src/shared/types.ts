@@ -591,6 +591,12 @@ export interface RepoChangedEvent {
   scope: 'refs' | 'worktree'
 }
 
+/** An open repo cannot be watched, or only partly (e.g. the inotify watch limit on Linux); `message` says why */
+export interface WatchFailedEvent {
+  repo: string
+  message: string
+}
+
 /** Long-running git output streamed to the renderer (fetch/pull/push/clone progress). */
 export interface ProgressEvent {
   repo: string
@@ -895,6 +901,8 @@ export interface AppApi {
   installCli(): Promise<CliStatus>
   /** Subscribe to repo file-system changes (debounced). Returns an unsubscribe fn. */
   onRepoChanged(cb: (e: RepoChangedEvent) => void): () => void
+  /** Automatic refresh stopped working for a repo (at most once per watch). Returns an unsubscribe fn. */
+  onWatchFailed(cb: (e: WatchFailedEvent) => void): () => void
   onProgress(cb: (e: ProgressEvent) => void): () => void
   /** Menu / global commands dispatched from the main process (e.g. "view:toggleFuzzyFinder") */
   onCommand(cb: (command: string) => void): () => void
@@ -982,6 +990,7 @@ export interface TerminalApi {
 /** Event names the Rust backend emits (must match src-tauri/src/lib.rs and menu.rs). */
 export const IPC = {
   repoChanged: 'evt:repoChanged',
+  watchFailed: 'evt:watchFailed',
   progress: 'evt:progress',
   command: 'evt:command',
   openRequests: 'evt:openRequests',

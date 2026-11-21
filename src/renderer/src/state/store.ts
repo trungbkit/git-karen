@@ -274,6 +274,17 @@ export const useStore = create<StoreState>((set, get) => ({
     window.app.onRepoChanged(({ repo, scope }) => {
       if (get().repos[repo]) void get().refresh(repo, { log: scope === 'refs' })
     })
+    window.app.onWatchFailed(({ repo, message }) => {
+      const tab = get().repos[repo]
+      if (!tab) return
+      get().toast({
+        kind: 'error',
+        title: `Automatic refresh is off for ${tab.info?.name ?? repo}`,
+        message: `Changes made outside Karen show up after a refresh (${window.app.platform === 'darwin' ? '⌘R' : 'Ctrl+R'}) or an operation in the app.`,
+        detail: message,
+        duration: 20_000
+      })
+    })
     set({ restored: true })
   },
 
