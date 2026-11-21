@@ -191,3 +191,17 @@ body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-sel
   .toast-timer { animation: none; display: none; }
 }
 .modal:focus, .ctx-menu:focus { outline: none; }
+
+/* ui/ErrorBoundary.tsx: the notice that replaces a region that failed to render */
+.error-boundary { display: flex; align-items: center; justify-content: center; padding: 16px; min-height: 0; overflow: auto; }
+.error-boundary.error-boundary-fill { flex: 1 1 0; }
+.error-boundary.root { position: fixed; inset: 0; background: var(--bg-panel, #1e1e1e); }
+.error-boundary.error-boundary-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.35); }
+.error-boundary-box {
+  max-width: 520px; width: 100%; padding: 16px 18px; border-radius: 8px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg-panel); border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border)); color: var(--text);
+}
+.error-boundary-title { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--danger); }
+.error-boundary-message { font-size: 12px; white-space: pre-wrap; word-break: break-word; user-select: text; max-height: 160px; overflow: auto; }
+.error-boundary-hint { font-size: 12px; }
+.error-boundary-actions { display: flex; gap: 8px; flex-wrap: wrap; }

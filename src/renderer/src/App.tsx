@@ -24,6 +24,7 @@ import { Toasts } from './ui/Toasts'
 import { DialogHost } from './ui/dialogs'
 import { ContextMenuHost } from './ui/ContextMenu'
 import { Splitter } from './ui/Splitter'
+import { ErrorBoundary } from './ui/ErrorBoundary'
 import { DEFAULT_PREFERENCES } from '@shared/types'
 import { WorkspaceView } from './components/WorkspaceView'
 import { useFileDragHint, useOpenRequests } from './actions/openActions'
@@ -89,6 +90,9 @@ export function App() {
   useUpdateEvents()
   const draggingFiles = useFileDragHint()
   const workspaceTab = useStore((s) => s.activeTab === WORKSPACE_TAB)
+  // a dialog that failed clears once another one opens (or none)
+  const modalKind = useStore((s) => s.modal?.kind ?? null)
+  const setModal = useStore((s) => s.setModal)
 
   if (!ready) return null
 
@@ -99,7 +103,11 @@ export function App() {
         <>
           <Toolbar repo={repo} />
           <div className={islandLayout ? 'app-body island' : 'app-body'} style={{ '--left-w': `${leftWidth}px`, '--right-w': `${rightWidth}px` } as CSSProperties}>
-            {showLeft && <LeftPanel repo={repo} />}
+            {showLeft && (
+              <ErrorBoundary region="The left panel" resetKey={repo.path} className="panel-left">
+                <LeftPanel repo={repo} />
+              </ErrorBoundary>
+            )}
             {showLeft && (
               <Splitter
                 side="left"
@@ -111,15 +119,21 @@ export function App() {
               />
             )}
             <div className="center">
-              {repo.center.kind === 'graph' && <Graph repo={repo} />}
-              {repo.center.kind === 'diff' && <DiffView repo={repo} target={repo.center.target} cwd={repo.center.cwd} />}
-              {repo.center.kind === 'conflict' && <ConflictView repo={repo} path={repo.center.path} />}
-              {repo.center.kind === 'rebase' && <RebasePanel repo={repo} onto={repo.center.onto} shas={repo.center.shas} />}
-              {repo.center.kind === 'history' && <FileHistoryView repo={repo} path={repo.center.path} blame={repo.center.blame} />}
-              {repo.center.kind === 'reflog' && <ReflogView repo={repo} />}
-              {repo.center.kind === 'compare' && <CompareView repo={repo} from={repo.center.from} to={repo.center.to} />}
-              {repo.center.kind === 'ai' && <AiReportView repo={repo} task={repo.center.task} />}
-              {showTerminal && <TerminalPanel key={repo.path} repo={repo} />}
+              <ErrorBoundary region="The center view" resetKey={`${repo.path}\n${repo.center.kind}`} className="error-boundary-fill">
+                {repo.center.kind === 'graph' && <Graph repo={repo} />}
+                {repo.center.kind === 'diff' && <DiffView repo={repo} target={repo.center.target} cwd={repo.center.cwd} />}
+                {repo.center.kind === 'conflict' && <ConflictView repo={repo} path={repo.center.path} />}
+                {repo.center.kind === 'rebase' && <RebasePanel repo={repo} onto={repo.center.onto} shas={repo.center.shas} />}
+                {repo.center.kind === 'history' && <FileHistoryView repo={repo} path={repo.center.path} blame={repo.center.blame} />}
+                {repo.center.kind === 'reflog' && <ReflogView repo={repo} />}
+                {repo.center.kind === 'compare' && <CompareView repo={repo} from={repo.center.from} to={repo.center.to} />}
+                {repo.center.kind === 'ai' && <AiReportView repo={repo} task={repo.center.task} />}
+              </ErrorBoundary>
+              {showTerminal && (
+                <ErrorBoundary region="The terminal" resetKey={repo.path}>
+                  <TerminalPanel key={repo.path} repo={repo} />
+                </ErrorBoundary>
+              )}
             </div>
             {showRight && (
               <Splitter
@@ -131,17 +145,27 @@ export function App() {
                 onCommit={(w) => void setPrefs({ rightPanelWidth: w })}
               />
             )}
-            {showRight && <RightPanel repo={repo} />}
+            {showRight && (
+              <ErrorBoundary region="The details panel" resetKey={repo.path} className="panel-right">
+                <RightPanel repo={repo} />
+              </ErrorBoundary>
+            )}
           </div>
         </>
       ) : workspaceTab ? (
-        <WorkspaceView />
+        <ErrorBoundary region="The workspace view" className="error-boundary-fill">
+          <WorkspaceView />
+        </ErrorBoundary>
       ) : (
-        <Welcome />
+        <ErrorBoundary region="The welcome screen" className="error-boundary-fill">
+          <Welcome />
+        </ErrorBoundary>
       )}
       <StatusBar repo={repo} />
       <FuzzyFinder />
-      <Modals />
+      <ErrorBoundary region="The dialog" resetKey={modalKind} className="error-boundary-overlay" dismiss={{ label: 'Close', run: () => setModal(null) }}>
+        <Modals />
+      </ErrorBoundary>
       <DialogHost />
       <ContextMenuHost />
       <Toasts />
