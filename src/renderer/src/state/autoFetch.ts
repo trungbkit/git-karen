@@ -48,7 +48,7 @@ export function useAutoFetch() {
         if (repos[path].remotes.length === 0 || repos[path].busy) continue
         try {
           const before = upstreamTip(repos[path])
-          await window.git.fetch(path, undefined, true)
+          await window.git.fetch(path, undefined, true, true)
           await refresh(path, { log: true })
           noteFetched(path, before)
           void refreshCleanupHint(path)

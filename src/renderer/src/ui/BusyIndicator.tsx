@@ -57,6 +57,8 @@ export function BusyPill({ repo }: { repo: RepoTab }) {
   }
 
   const kind = busyKind(busy)
+  // network operations can hang on a slow or unreachable remote; everything else finishes on its own
+  const cancellable = kind === 'fetch' || kind === 'pull' || kind === 'push'
   const phase = p ? progressText(p) : null
   const title = [busy, phase, p?.detail, elapsed >= ELAPSED_AFTER_MS ? `running for ${formatElapsed(elapsed)}` : null].filter(Boolean).join(' · ')
   return (
@@ -77,6 +79,11 @@ export function BusyPill({ repo }: { repo: RepoTab }) {
           </span>
         )}
       </span>
+      {cancellable && (
+        <button className="busy-pill-cancel" title={`Stop ${busy.toLowerCase()}`} aria-label={`Stop ${busy.toLowerCase()}`} onClick={() => void window.git.cancelOperation(repo.path)}>
+          <Icon name="x" size={11} />
+        </button>
+      )}
     </span>
   )
 }

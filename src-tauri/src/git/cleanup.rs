@@ -214,12 +214,13 @@ impl GitService {
         if names.is_empty() {
             return Ok(());
         }
-        let _g = self.lock(repo).await;
         let mut args = a(&["push", "--progress", &rev_arg(remote)?, "--delete"]);
         for n in &names {
             args.push(rev_arg(n)?);
         }
-        self.write_opts(repo, args, Opts::default().progress(self.progress(repo, "push"))).await?;
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
+        self.write_opts(repo, args, self.remote_opts(repo, "push", &op)).await?;
         Ok(())
     }
 }

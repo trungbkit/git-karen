@@ -237,14 +237,15 @@ impl GitService {
     /// Push a commit to a remote branch. With `lease`, the push is forced but only if the remote branch is
     /// still at that commit; without it, it only succeeds when it creates the branch or fast-forwards it.
     pub async fn push_sha(&self, repo: &str, remote: &str, sha: &str, branch: &str, lease: Option<String>) -> Res<()> {
-        let _g = self.lock(repo).await;
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
         let target = format!("refs/heads/{branch}");
         let mut args = a(&["push", "--progress"]);
         if let Some(l) = lease {
             args.push(format!("--force-with-lease={target}:{}", rev_arg(&l)?));
         }
         args.extend([rev_arg(remote)?, format!("{}:{target}", rev_arg(sha)?)]);
-        self.write_opts(repo, args, Opts::default().progress(self.progress(repo, "push"))).await?;
+        self.write_opts(repo, args, self.remote_opts(repo, "push", &op)).await?;
         Ok(())
     }
 }

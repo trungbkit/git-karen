@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isCancelled } from '@shared/types'
 import { useStore } from '../state/store'
 import { Modal } from '../ui/Modal'
 import { joinPath } from '../util/format'
@@ -55,6 +56,8 @@ function CloneForm() {
 
   const dest = parent && name ? joinPath(parent, name) : ''
   const close = () => !busy && setModal(null)
+  // stops the clone (the backend removes the partial folder); the dialog stays open with the form as it was
+  const cancelClone = () => void window.git.cancelOperation(dest)
   const submit = async () => {
     if (!url.trim() || !dest) return
     setBusy(true)
@@ -65,7 +68,7 @@ function CloneForm() {
       setModal(null)
       await openRepo(info.path)
     } catch (e) {
-      setError((e as Error).message)
+      if (!isCancelled(e)) setError((e as Error).message)
     } finally {
       setBusy(false)
     }
@@ -78,8 +81,8 @@ function CloneForm() {
       width={560}
       footer={
         <>
-          <button className="btn" onClick={close} disabled={busy}>
-            Cancel
+          <button className="btn" onClick={busy ? cancelClone : close}>
+            {busy ? 'Stop clone' : 'Cancel'}
           </button>
           <button className="btn primary" disabled={busy || !url.trim() || !dest} onClick={() => void submit()}>
             {busy ? 'Cloning…' : 'Clone'}

@@ -53,7 +53,7 @@ const GIT_METHODS: Record<keyof GitApi, true> = {
   lfsTrack: true, lfsCommand: true, smartStatus: true, pendingDiff: true, compareBranch: true, prTemplate: true, commitPatches: true,
   createPullRequest: true, reflog: true, resolveRef: true, countCommits: true, branchImpact: true,
   discardImpact: true, snapshot: true, applySnapshot: true, stashStore: true, undoStashPop: true, restoreBranch: true,
-  backupFiles: true, restoreFiles: true, pushSha: true, watch: true, unwatch: true
+  backupFiles: true, restoreFiles: true, pushSha: true, cancelOperation: true, watch: true, unwatch: true
 }
 
 const git = Object.fromEntries(

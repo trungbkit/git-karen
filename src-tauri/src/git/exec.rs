@@ -1,12 +1,41 @@
 // Runs the system `git` binary. Every call gets a non-interactive, locale-stable environment.
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 pub type LineSink = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// The error of a command stopped through its `CancelToken`. The renderer shows no error for it.
+pub const CANCELLED: &str = "Cancelled";
+
+/// After asking git to stop (SIGTERM, so it removes its lock files), how long before it is killed outright.
+const TERMINATE_GRACE: Duration = Duration::from_secs(3);
+/// How often a cancellable or timed command checks its token and its idle time.
+const WATCH_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Shared flag that stops the commands holding it (and the ones started with it later).
+#[derive(Clone, Default, Debug)]
+pub struct CancelToken(Arc<AtomicBool>);
+
+impl CancelToken {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+    /// Resolves once cancelled.
+    pub async fn cancelled(&self) {
+        while !self.is_cancelled() {
+            tokio::time::sleep(WATCH_INTERVAL).await;
+        }
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct Opts {
@@ -20,6 +49,11 @@ pub struct Opts {
     pub on_stderr_line: Option<LineSink>,
     /// Mark as a read-only command (sets GIT_OPTIONAL_LOCKS=0)
     pub read_only: bool,
+    /// Stop the command when it prints nothing (stdout or stderr) for this long. Meant for background network
+    /// commands with `--progress`: a fetch may legitimately take long, but not stay silent.
+    pub idle_timeout: Option<Duration>,
+    /// Stop the command when this token is cancelled; it then fails with `CANCELLED`
+    pub cancel: Option<CancelToken>,
 }
 
 impl Opts {
@@ -38,6 +72,35 @@ impl Opts {
         self.on_stderr_line = Some(sink);
         self
     }
+    pub fn idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.idle_timeout = timeout;
+        self
+    }
+    pub fn cancel(mut self, token: &CancelToken) -> Self {
+        self.cancel = Some(token.clone());
+        self
+    }
+}
+
+/// Why a command was stopped before it finished.
+enum Stop {
+    Cancelled,
+    TimedOut(Duration),
+}
+
+/// Ask git and the helpers it started (ssh, a credential helper, a transport) to stop the way Ctrl+C would, so git
+/// removes its lock files and temporary packs. `force` kills them outright.
+fn terminate(child: &mut Child, force: bool) {
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        // a watched command leads its own process group (see `process_group` below): signal the whole group
+        // SAFETY: kill(2) on a process group we created and whose leader has not been waited for yet
+        unsafe {
+            libc::kill(-(pid as libc::pid_t), if force { libc::SIGKILL } else { libc::SIGTERM });
+        }
+        return;
+    }
+    let _ = (child.start_kill(), force);
 }
 
 #[derive(Debug, Clone)]
@@ -115,8 +178,22 @@ pub async fn git_bytes(cwd: &Path, args: &[String], opts: Opts) -> Result<RawOut
     }
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    let watched = opts.cancel.is_some() || opts.idle_timeout.is_some();
+    // a stoppable command gets its own process group, so stopping it reaches ssh and other helpers too (they would
+    // otherwise keep running and hold git's output pipes open)
+    #[cfg(unix)]
+    if watched {
+        cmd.process_group(0);
+    }
 
+    if opts.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+        return Err(CANCELLED.into());
+    }
     let mut child = cmd.spawn().map_err(|e| format!("Failed to run git: {e}"))?;
+    let started = Instant::now();
+    // milliseconds after `started` of the last output, for the idle timeout
+    let last_output = AtomicU64::new(0);
+    let touch = || last_output.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
     let mut stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let stdin = child.stdin.take();
@@ -130,17 +207,27 @@ pub async fn git_bytes(cwd: &Path, args: &[String], opts: Opts) -> Result<RawOut
     };
     let read_out = async {
         let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf).await;
+        let mut chunk = vec![0u8; 8192]; // on the heap: this future is awaited deep inside IPC calls
+        loop {
+            match stdout.read(&mut chunk).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    touch();
+                    buf.extend_from_slice(&chunk[..n]);
+                }
+            }
+        }
         buf
     };
     let read_err = async {
         let mut all = Vec::new();
-        let mut chunk = [0u8; 8192];
+        let mut chunk = vec![0u8; 8192]; // on the heap: this future is awaited deep inside IPC calls
         let mut splitter = LineSplitter { pending: String::new() };
         loop {
             match stderr.read(&mut chunk).await {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
+                    touch();
                     all.extend_from_slice(&chunk[..n]);
                     if let Some(sink) = &opts.on_stderr_line {
                         splitter.push(&String::from_utf8_lossy(&chunk[..n]), sink);
@@ -153,8 +240,40 @@ pub async fn git_bytes(cwd: &Path, args: &[String], opts: Opts) -> Result<RawOut
         }
         all
     };
-    let ((), out, err) = tokio::join!(write_input, read_out, read_err);
+    let mut io = Box::pin(async { tokio::join!(write_input, read_out, read_err) });
+    let mut stop: Option<(Stop, Instant)> = None;
+    let (out, err) = loop {
+        tokio::select! {
+            ((), out, err) = &mut io => break (out, err),
+            _ = tokio::time::sleep(WATCH_INTERVAL), if watched => match &stop {
+                // stopped and exited: a helper that escaped the signal may still hold the pipes; stop reading them
+                Some(_) if matches!(child.try_wait(), Ok(Some(_))) => break (Vec::new(), Vec::new()),
+                None => {
+                    let idle = started.elapsed().saturating_sub(Duration::from_millis(last_output.load(Ordering::Relaxed)));
+                    let reason = if opts.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+                        Some(Stop::Cancelled)
+                    } else {
+                        opts.idle_timeout.filter(|t| idle >= *t).map(Stop::TimedOut)
+                    };
+                    if let Some(reason) = reason {
+                        terminate(&mut child, false);
+                        stop = Some((reason, Instant::now()));
+                    }
+                }
+                Some((_, since)) if since.elapsed() >= TERMINATE_GRACE => terminate(&mut child, true),
+                Some(_) => {}
+            },
+        }
+    };
     let status = child.wait().await.map_err(|e| format!("Failed to run git: {e}"))?;
+    match stop {
+        Some((Stop::Cancelled, _)) => return Err(CANCELLED.into()),
+        Some((Stop::TimedOut(t), _)) => {
+            let cmd = args.first().map(String::as_str).unwrap_or("");
+            return Err(format!("git {cmd} timed out: no response for {} seconds", t.as_secs()));
+        }
+        None => {}
+    }
 
     let stderr = String::from_utf8_lossy(&err).into_owned();
     let code = status.code().unwrap_or(-1);

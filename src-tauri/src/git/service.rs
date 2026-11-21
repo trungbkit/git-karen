@@ -1,6 +1,7 @@
 // Git backend implemented on top of the system `git` CLI. Free of Tauri types so it can be unit tested.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use regex::Regex;
@@ -9,7 +10,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::OwnedMutexGuard;
 
-use super::exec::{git, LineSink, Opts, Output};
+use super::exec::{git, CancelToken, LineSink, Opts, Output, CANCELLED};
 use super::parse::*;
 use super::recovery::rev_arg;
 use super::watcher::{RepoWatcher, WatchConfig, WatchEvent};
@@ -33,6 +34,10 @@ impl Hooks for NoHooks {}
 const WATCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(300);
 /// Longest a change waits while more keep coming (a long build writing files), so the refresh is not put off forever.
 const WATCH_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// An automatic (background) fetch that prints nothing for this long is stopped: a hung connection must not keep
+/// the network lock forever. Fetches the user starts have no timeout; they can cancel them.
+const BACKGROUND_FETCH_IDLE: std::time::Duration = std::time::Duration::from_secs(90);
 
 /// Least time between two progress events of the same phase (git rewrites its counters many times a second).
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
@@ -101,6 +106,11 @@ pub(super) fn match_remote(remotes: &[String], short: &str) -> Option<String> {
     remotes.iter().filter(|r| short.starts_with(&format!("{r}/"))).max_by_key(|r| r.len()).cloned()
 }
 
+/// The registry key of a remote operation: the absolute path, so a clone's destination matches however it was typed.
+fn op_key(path: &str) -> String {
+    std::path::absolute(path).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| path.to_string())
+}
+
 fn to_value<T: Serialize>(v: T) -> Res<Value> {
     serde_json::to_value(v).map_err(io_err)
 }
@@ -115,15 +125,50 @@ impl Args {
     }
 }
 
+type LockMap = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
+
 pub struct GitService {
     hooks: Arc<dyn Hooks>,
-    locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Per repo: operations that change the index, the work tree or local refs
+    locks: LockMap,
+    /// Per repo: operations that talk to a remote (see `net_lock`)
+    net_locks: LockMap,
+    /// Per repo (or clone destination): cancel tokens of the remote operations in flight
+    running: Mutex<HashMap<String, Vec<(u64, CancelToken)>>>,
+    next_op: AtomicU64,
     watchers: Mutex<HashMap<String, RepoWatcher>>,
+}
+
+/// A remote operation in flight, which `cancel_operation` can stop. Leaves the registry when dropped.
+pub(super) struct RemoteOp<'a> {
+    svc: &'a GitService,
+    key: String,
+    id: u64,
+    pub token: CancelToken,
+}
+
+impl Drop for RemoteOp<'_> {
+    fn drop(&mut self) {
+        let mut running = self.svc.running.lock().unwrap();
+        if let Some(ops) = running.get_mut(&self.key) {
+            ops.retain(|(id, _)| *id != self.id);
+            if ops.is_empty() {
+                running.remove(&self.key);
+            }
+        }
+    }
 }
 
 impl GitService {
     pub fn new(hooks: Arc<dyn Hooks>) -> Self {
-        GitService { hooks, locks: Mutex::default(), watchers: Mutex::default() }
+        GitService {
+            hooks,
+            locks: Mutex::default(),
+            net_locks: Mutex::default(),
+            running: Mutex::default(),
+            next_op: AtomicU64::new(0),
+            watchers: Mutex::default(),
+        }
     }
 
     /// IPC entry point: `method(...args)` for every method of the TypeScript `GitApi`; anything else is rejected.
@@ -232,7 +277,12 @@ impl GitService {
                     "stashApply" => ret!(self.stash_apply(r, a.get(1)?, false)),
                     "stashPop" => ret!(self.stash_apply(r, a.get(1)?, true)),
                     "stashDrop" => ret!(self.stash_drop(r, a.get(1)?)),
-                    "fetch" => ret!(self.fetch(r, a.get(1)?, a.get::<Option<bool>>(2)?.unwrap_or(false))),
+                    "fetch" => ret!(self.fetch(
+                        r,
+                        a.get(1)?,
+                        a.get::<Option<bool>>(2)?.unwrap_or(false),
+                        a.get::<Option<bool>>(3)?.unwrap_or(false)
+                    )),
                     "pull" => ret!(self.pull(r, a.get::<Option<String>>(1)?.as_deref().unwrap_or("ff"))),
                     "push" => ret!(self.push(r, a.get::<Option<_>>(1)?.unwrap_or_default())),
                     "addRemote" => ret!(self.add_remote(r, &a.get::<String>(1)?, &a.get::<String>(2)?)),
@@ -319,6 +369,7 @@ impl GitService {
                         &a.get::<String>(3)?,
                         a.get(4)?
                     )),
+                    "cancelOperation" => to_value(self.cancel_operation(r)),
                     "watch" => to_value(self.watch(r)),
                     "unwatch" => to_value(self.unwatch(r)),
                     _ => Err(format!("Unknown method: {method}")),
@@ -357,6 +408,52 @@ impl GitService {
     pub(super) async fn lock(&self, repo: &str) -> OwnedMutexGuard<()> {
         let m = self.locks.lock().unwrap().entry(repo.to_string()).or_default().clone();
         m.lock_owned().await
+    }
+
+    /// Register a remote operation on `key` (a repo, or a clone's destination) so `cancel_operation` can stop it.
+    pub(super) fn remote_op(&self, key: &str) -> RemoteOp<'_> {
+        let id = self.next_op.fetch_add(1, Ordering::Relaxed);
+        let token = CancelToken::default();
+        let key = op_key(key);
+        self.running.lock().unwrap().entry(key.clone()).or_default().push((id, token.clone()));
+        RemoteOp { svc: self, key, id, token }
+    }
+
+    /// Wait for a lock of `map`, giving up when `op` is cancelled meanwhile.
+    async fn lock_or_cancel(&self, map: &LockMap, repo: &str, op: &RemoteOp<'_>) -> Res<OwnedMutexGuard<()>> {
+        let m = map.lock().unwrap().entry(repo.to_string()).or_default().clone();
+        tokio::select! {
+            g = m.lock_owned() => Ok(g),
+            () = op.token.cancelled() => Err(CANCELLED.into()),
+        }
+    }
+
+    /// Serialise operations that talk to a remote, apart from the write lock: a fetch that hangs on the network must
+    /// not hold up a commit, checkout or stage. Commands that only update remote-tracking refs, FETCH_HEAD or the
+    /// remote itself (fetch, push, pushing and deleting remote tags and branches) take this lock alone; git locks each
+    /// ref it updates. Commands that also change the work tree (pull, submodule update, lfs pull) take this lock
+    /// first and then the write lock, always in that order, and so never hold the write lock while waiting here.
+    pub(super) async fn net_lock(&self, repo: &str, op: &RemoteOp<'_>) -> Res<OwnedMutexGuard<()>> {
+        self.lock_or_cancel(&self.net_locks, repo, op).await
+    }
+
+    /// The write lock for a remote operation that changes the work tree, given up when the operation is cancelled.
+    pub(super) async fn write_lock(&self, repo: &str, op: &RemoteOp<'_>) -> Res<OwnedMutexGuard<()>> {
+        self.lock_or_cancel(&self.locks, repo, op).await
+    }
+
+    /// Options of a remote command: progress events under `name`, stopped by `op`'s cancel token.
+    pub(super) fn remote_opts(&self, repo: &str, name: &str, op: &RemoteOp<'_>) -> Opts {
+        Opts::default().progress(self.progress(repo, name)).cancel(&op.token)
+    }
+
+    /// Stop every remote operation running (or waiting for its lock) on `key`: a repo, or a clone's destination.
+    /// Returns whether there was one. The stopped operations fail with `CANCELLED`.
+    pub fn cancel_operation(&self, key: &str) -> bool {
+        let running = self.running.lock().unwrap();
+        let ops = running.get(&op_key(key)).map(Vec::as_slice).unwrap_or_default();
+        ops.iter().for_each(|(_, t)| t.cancel());
+        !ops.is_empty()
     }
 
     pub(super) fn progress(&self, repo: &str, op: &str) -> LineSink {
@@ -468,9 +565,27 @@ impl GitService {
         let parent = dest.parent().unwrap_or(Path::new("/")).to_string_lossy().into_owned();
         let dest = dest.to_string_lossy().into_owned();
         tokio::fs::create_dir_all(&parent).await.map_err(io_err)?;
-        let opts = Opts::default().progress(self.progress(&dest, "clone"));
-        self.write_opts(&parent, args!["clone", "--progress", "--recurse-submodules", url, dest.as_str()], opts)
-            .await?;
+        let existed = Path::new(&dest).exists();
+        let op = self.remote_op(&dest);
+        let opts = self.remote_opts(&dest, "clone", &op);
+        let res = self.write_opts(&parent, args!["clone", "--progress", "--recurse-submodules", url, dest.as_str()], opts).await;
+        if let Err(e) = res {
+            // a stopped clone may leave a partial checkout behind; git refuses a non-empty destination, so whatever
+            // is there now came from this clone
+            if e == CANCELLED {
+                if existed {
+                    if let Ok(entries) = std::fs::read_dir(&dest) {
+                        for entry in entries.flatten() {
+                            let p = entry.path();
+                            let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+                        }
+                    }
+                } else {
+                    let _ = tokio::fs::remove_dir_all(&dest).await;
+                }
+            }
+            return Err(e);
+        }
         self.open(&dest).await
     }
 
@@ -972,8 +1087,9 @@ impl GitService {
     }
 
     pub async fn delete_remote_branch(&self, repo: &str, remote: &str, name: &str) -> Res<()> {
-        let _g = self.lock(repo).await;
-        let opts = Opts::default().progress(self.progress(repo, "push"));
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
+        let opts = self.remote_opts(repo, "push", &op);
         self.write_opts(repo, args!["push", "--progress", remote, "--delete", name], opts).await?;
         Ok(())
     }
@@ -1029,15 +1145,17 @@ impl GitService {
     }
 
     pub async fn push_tag(&self, repo: &str, remote: &str, name: &str) -> Res<()> {
-        let _g = self.lock(repo).await;
-        let opts = Opts::default().progress(self.progress(repo, "push"));
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
+        let opts = self.remote_opts(repo, "push", &op);
         self.write_opts(repo, args!["push", "--progress", remote, format!("refs/tags/{name}")], opts).await?;
         Ok(())
     }
 
     pub async fn delete_remote_tag(&self, repo: &str, remote: &str, name: &str) -> Res<()> {
-        let _g = self.lock(repo).await;
-        let opts = Opts::default().progress(self.progress(repo, "push"));
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
+        let opts = self.remote_opts(repo, "push", &op);
         self.write_opts(repo, args!["push", "--progress", remote, "--delete", format!("refs/tags/{name}")], opts)
             .await?;
         Ok(())
@@ -1210,14 +1328,17 @@ impl GitService {
 
     // ---------------------------------------------------------------- remotes
 
-    pub async fn fetch(&self, repo: &str, remote: Option<String>, prune: bool) -> Res<()> {
-        let _g = self.lock(repo).await;
+    /// `background`: an automatic fetch, stopped after `BACKGROUND_FETCH_IDLE` without any output.
+    pub async fn fetch(&self, repo: &str, remote: Option<String>, prune: bool, background: bool) -> Res<()> {
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
         let mut a = args!["fetch", "--progress", "--tags"];
         if prune {
             a.push("--prune".into());
         }
         a.push(remote.filter(|r| !r.is_empty()).unwrap_or_else(|| "--all".into()));
-        self.write_opts(repo, a, Opts::default().progress(self.progress(repo, "fetch"))).await?;
+        let opts = self.remote_opts(repo, "fetch", &op).idle_timeout(background.then_some(BACKGROUND_FETCH_IDLE));
+        self.write_opts(repo, a, opts).await?;
         Ok(())
     }
 
@@ -1228,14 +1349,19 @@ impl GitService {
             "ff" => "--no-rebase",
             _ => return Err(format!("Invalid pull mode: {mode}")),
         };
-        let _g = self.lock(repo).await;
-        let opts = Opts::default().progress(self.progress(repo, "pull"));
+        // pull fetches and then merges or rebases into the work tree: both locks, network first
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
+        let _g = self.write_lock(repo, &op).await?;
+        let opts = self.remote_opts(repo, "pull", &op);
         self.write_opts(repo, args!["pull", "--progress", flag, "--no-edit"], opts).await?;
         Ok(())
     }
 
     pub async fn push(&self, repo: &str, opts: PushOptions) -> Res<()> {
-        let _g = self.lock(repo).await;
+        // push only reads local refs and updates the remote-tracking ref (and, with --set-upstream, the config)
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
         let branch = match opts.branch {
             Some(b) => b,
             None => self.current_branch(repo).await?.ok_or("Cannot push from a detached HEAD")?,
@@ -1264,7 +1390,7 @@ impl GitService {
             a.push("--set-upstream".into());
         }
         a.extend(args![remote, format!("refs/heads/{}", refspec.replacen(':', ":refs/heads/", 1))]);
-        self.write_opts(repo, a, Opts::default().progress(self.progress(repo, "push"))).await?;
+        self.write_opts(repo, a, self.remote_opts(repo, "push", &op)).await?;
         Ok(())
     }
 
@@ -1289,18 +1415,22 @@ impl GitService {
     // -------------------------------------------------- submodules & worktrees
 
     pub async fn submodule_update(&self, repo: &str, path: Option<String>) -> Res<()> {
-        let _g = self.lock(repo).await;
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
+        let _g = self.write_lock(repo, &op).await?;
         let mut a = args!["submodule", "update", "--init", "--recursive", "--progress"];
         if let Some(p) = path {
             a.extend(args!["--", p]);
         }
-        self.write_opts(repo, a, Opts::default().progress(self.progress(repo, "submodule"))).await?;
+        self.write_opts(repo, a, self.remote_opts(repo, "submodule", &op)).await?;
         Ok(())
     }
 
     pub async fn submodule_add(&self, repo: &str, url: &str, path: &str) -> Res<()> {
-        let _g = self.lock(repo).await;
-        let opts = Opts::default().progress(self.progress(repo, "submodule"));
+        let op = self.remote_op(repo);
+        let _n = self.net_lock(repo, &op).await?;
+        let _g = self.write_lock(repo, &op).await?;
+        let opts = self.remote_opts(repo, "submodule", &op);
         self.write_opts(repo, args!["submodule", "add", "--progress", url, path], opts).await?;
         Ok(())
     }
@@ -1509,12 +1639,21 @@ impl GitService {
         if !["fetch", "pull", "push", "prune", "checkout"].contains(&cmd) {
             return Err(format!("Invalid lfs command: {cmd}"));
         }
-        let _g = self.lock(repo).await;
+        // fetch and push only move LFS objects; pull and checkout write the work tree; prune is local
+        let op = self.remote_op(repo);
+        let _n = match cmd {
+            "prune" | "checkout" => None,
+            _ => Some(self.net_lock(repo, &op).await?),
+        };
+        let _g = match cmd {
+            "fetch" | "push" => None,
+            _ => Some(self.write_lock(repo, &op).await?),
+        };
         let mut a = args!["lfs", cmd];
         if cmd == "push" {
             a.extend(args!["--all", self.default_remote(repo).await?]);
         }
-        self.write_opts(repo, a, Opts::default().progress(self.progress(repo, &format!("lfs {cmd}")))).await?;
+        self.write_opts(repo, a, self.remote_opts(repo, &format!("lfs {cmd}"), &op)).await?;
         Ok(())
     }
 

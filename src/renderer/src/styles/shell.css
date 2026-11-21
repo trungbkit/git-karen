@@ -101,6 +101,11 @@
 .busy-pill-label { font-weight: 600; }
 .busy-pill-pct { color: var(--accent); font-variant-numeric: tabular-nums; }
 .busy-pill-sub { font-size: 10.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.busy-pill-cancel {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin: 0 -8px 0 2px; padding: 0;
+  border: 0; border-radius: 10px; background: transparent; color: var(--text-secondary); cursor: pointer;
+}
+.busy-pill-cancel:hover { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
 .busy-pill.done {
   color: var(--success); background: color-mix(in srgb, var(--success) 13%, var(--bg-toolbar)); border-color: color-mix(in srgb, var(--success) 45%, transparent);
   animation: busy-done 1.6s ease-out both;

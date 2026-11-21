@@ -5,7 +5,7 @@ use std::sync::{Arc, Once};
 
 use tempfile::TempDir;
 
-use super::exec::{git, Opts};
+use super::exec::{git, Opts, CANCELLED};
 use super::service::{GitService, NoHooks};
 use crate::types::*;
 
@@ -18,7 +18,8 @@ fn isolate_git_env() {
         let cfg = home.join(".gitconfig");
         std::fs::write(
             &cfg,
-            "[user]\n\tname = Test User\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n",
+            // ext:: lets the cancel and timeout tests use a remote that never answers (see `HANGING_REMOTE`)
+            "[user]\n\tname = Test User\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n[protocol \"ext\"]\n\tallow = always\n",
         )
         .unwrap();
         // the terminal tests run a login shell in this HOME; without startup files zsh (Linux) runs its new-user wizard
@@ -395,7 +396,7 @@ async fn works_with_remotes_fetch_checkout_remote_push_pull() {
     svc.checkout(copy, "main").await.unwrap();
     svc.push(copy, PushOptions::default()).await.unwrap();
 
-    svc.fetch(&repo, None, true).await.unwrap();
+    svc.fetch(&repo, None, true, false).await.unwrap();
     let refs = svc.refs(&repo).await.unwrap();
     assert_eq!(refs.iter().find(|r| r.name == "main").unwrap().behind, Some(1));
     svc.checkout_remote(&repo, "refs/remotes/origin/topic", None).await.unwrap();
@@ -439,7 +440,7 @@ async fn streams_clone_fetch_and_push_progress_with_percentages() {
     let copy = svc.clone_repo(&format!("file://{remote}"), &dest).await.unwrap().path;
     commit_file(&repo, "g", "g\n", "g").await;
     plain.push(&repo, PushOptions::default()).await.unwrap();
-    svc.fetch(&copy, None, false).await.unwrap();
+    svc.fetch(&copy, None, false, false).await.unwrap();
 
     let events = log.0.lock().unwrap();
     let has = |op: &str, phase: &str| events.iter().any(|e| e.op == op && e.message.contains(phase) && e.message.contains('%'));
@@ -1316,4 +1317,81 @@ async fn compares_with_a_local_base_branch() {
     let names = res.iter().map(|b| (b.name.as_str(), b.reason)).collect::<Vec<_>>();
     // the base branch itself is never offered, nor main, even though main's tip is in release
     assert_eq!(names, [("landed", "merged"), ("pending", "unknown")]);
+}
+
+/// A remote whose transport is `sleep`: git connects and then waits for an answer that never comes.
+#[cfg(unix)]
+const HANGING_REMOTE: &str = "ext::sleep 60";
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hanging_fetch_neither_blocks_a_commit_nor_resists_cancel() {
+    use std::time::Duration;
+    let (svc, _d, repo) = setup().await;
+    commit_file(&repo, "a", "a\n", "a").await;
+    sh(&repo, &["remote", "add", "slow", HANGING_REMOTE]).await;
+    let svc = Arc::new(svc);
+    let fetch = |svc: Arc<GitService>, repo: String| tokio::spawn(async move { svc.fetch(&repo, Some("slow".into()), false, false).await });
+    let first = fetch(svc.clone(), repo.clone());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    // the second fetch waits for the network lock the first one holds
+    let second = fetch(svc.clone(), repo.clone());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!first.is_finished() && !second.is_finished());
+
+    write_file(&repo, "b", "b\n");
+    let commit = async {
+        svc.stage_all(&repo).await?;
+        svc.commit(&repo, "b while fetching", CommitOptions::default()).await
+    };
+    let committed = tokio::time::timeout(Duration::from_secs(10), commit).await.expect("commit does not wait for the fetch");
+    committed.unwrap();
+    assert!(!first.is_finished(), "the fetch is still hanging");
+
+    assert!(svc.cancel_operation(&repo));
+    for task in [first, second] {
+        let res = tokio::time::timeout(Duration::from_secs(10), task).await.expect("cancel stops the fetch").unwrap();
+        assert_eq!(res.unwrap_err(), CANCELLED);
+    }
+    assert!(!svc.cancel_operation(&repo), "nothing is left to cancel");
+    // the repository is usable afterwards: no lock files were left behind
+    svc.create_branch(&repo, "after", None, false).await.unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_silent_command_hits_its_idle_timeout() {
+    use std::time::{Duration, Instant};
+    let (_svc, _d, repo) = setup().await;
+    sh(&repo, &["remote", "add", "slow", HANGING_REMOTE]).await;
+    let start = Instant::now();
+    let args: Vec<String> = ["fetch", "--progress", "slow"].map(String::from).to_vec();
+    let res = git(Path::new(&repo), &args, Opts::default().idle_timeout(Some(Duration::from_millis(500)))).await;
+    let err = res.unwrap_err();
+    assert!(err.contains("timed out"), "{err}");
+    assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+
+    // output keeps a command alive: a timeout longer than its silences never fires
+    let args: Vec<String> = ["log", "--oneline"].map(String::from).to_vec();
+    commit_file(&repo, "a", "a\n", "a").await;
+    git(Path::new(&repo), &args, Opts::default().idle_timeout(Some(Duration::from_secs(5)))).await.unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_clone_leaves_no_folder_behind() {
+    use std::time::Duration;
+    isolate_git_env();
+    let svc = Arc::new(GitService::new(Arc::new(NoHooks)));
+    let (_pd, parent) = temp_dir("karen-clone-");
+    let dest = join(&parent, "copy").to_string_lossy().into_owned();
+    let task = {
+        let (svc, dest) = (svc.clone(), dest.clone());
+        tokio::spawn(async move { svc.clone_repo(HANGING_REMOTE, &dest).await })
+    };
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(svc.cancel_operation(&dest));
+    let res = tokio::time::timeout(Duration::from_secs(10), task).await.expect("cancel stops the clone").unwrap();
+    assert_eq!(res.unwrap_err(), CANCELLED);
+    assert!(!Path::new(&dest).exists());
 }

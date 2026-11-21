@@ -760,7 +760,8 @@ export interface GitApi {
   stashDrop(repo: string, index: number): Promise<void>
 
   // remotes
-  fetch(repo: string, remote?: string, prune?: boolean): Promise<void>
+  /** `background`: an automatic fetch, stopped when it prints nothing for 90 s (a hung connection) */
+  fetch(repo: string, remote?: string, prune?: boolean, background?: boolean): Promise<void>
   pull(repo: string, mode?: 'ff' | 'ff-only' | 'rebase'): Promise<void>
   push(repo: string, opts?: { remote?: string; branch?: string; force?: boolean; setUpstream?: boolean }): Promise<void>
   addRemote(repo: string, name: string, url: string): Promise<void>
@@ -824,6 +825,12 @@ export interface GitApi {
   restoreFiles(repo: string, backups: FileBackup[]): Promise<void>
   /** Push a commit to `remote/branch`; with `lease` it is forced only while the remote is still at that commit */
   pushSha(repo: string, remote: string, sha: string, branch: string, lease?: string | null): Promise<void>
+
+  /**
+   * Stop the clone, fetch, pull or push running on `repo` (a clone: its destination folder), including ones waiting
+   * for another to finish. They fail with `GIT_CANCELLED`. Resolves to whether anything was running.
+   */
+  cancelOperation(repo: string): Promise<boolean>
 
   // watching
   watch(repo: string): Promise<void>
@@ -985,6 +992,13 @@ export interface TerminalApi {
   kill(id: string): Promise<void>
   onData(cb: (id: string, data: string) => void): () => void
   onExit(cb: (id: string, exitCode: number) => void): () => void
+}
+
+/** The error message of a git operation stopped with `cancelOperation` (CANCELLED in src-tauri/src/git/exec.rs). */
+export const GIT_CANCELLED = 'Cancelled'
+
+export function isCancelled(e: unknown): boolean {
+  return e instanceof Error && e.message === GIT_CANCELLED
 }
 
 /** Event names the Rust backend emits (must match src-tauri/src/lib.rs and menu.rs). */

@@ -13,7 +13,7 @@ import type {
   Workspace,
   Worktree
 } from '@shared/types'
-import { DEFAULT_PREFERENCES } from '@shared/types'
+import { DEFAULT_PREFERENCES, isCancelled } from '@shared/types'
 import type { PullRequest } from '@shared/integrations'
 import { closeRepoSessions } from './terminals'
 import { clearProgress } from './progress'
@@ -440,7 +440,8 @@ export const useStore = create<StoreState>((set, get) => ({
       if (opts.success) get().toast({ kind: 'success', title: opts.success })
       return true
     } catch (e) {
-      get().toast(errorToast(label, e instanceof Error ? e : new Error(String(e)), repo))
+      // the user stopped it (toolbar): not an error
+      if (!isCancelled(e)) get().toast(errorToast(label, e instanceof Error ? e : new Error(String(e)), repo))
       return false
     } finally {
       const at = Date.now()
