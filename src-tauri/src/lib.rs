@@ -2,6 +2,7 @@
 // The renderer reaches the backend only through the commands below (see src/renderer/src/platform/bridge.ts).
 mod ai;
 mod app_state;
+pub mod askpass;
 mod appearance;
 mod editor;
 mod git;
@@ -36,9 +37,15 @@ use types::{ChangeScope, ProgressEvent, RepoChangedEvent, WatchFailedEvent};
 const EVT_REPO_CHANGED: &str = "evt:repoChanged";
 const EVT_PROGRESS: &str = "evt:progress";
 const EVT_WATCH_FAILED: &str = "evt:watchFailed";
+const EVT_ASKPASS: &str = "evt:askpass";
+const EVT_ASKPASS_DONE: &str = "evt:askpassDone";
+
+pub use askpass::askpass_main;
 
 pub struct Backend {
     git: Arc<GitService>,
+    /// None when the channel could not be created; git then fails on credential prompts as before
+    askpass: Option<Arc<askpass::AskPass>>,
     store: Mutex<AppStateStore>,
     ai: Mutex<AiStore>,
     ptys: Arc<PtyManager>,
@@ -149,6 +156,10 @@ async fn app_call(
             let (tx, rx) = tokio::sync::oneshot::channel();
             app.run_on_main_thread(move || drop(tx.send(appearance::read_system()))).map_err(|e| e.to_string())?;
             to_value(rx.await.map_err(|e| e.to_string())?)
+        }
+        "answerAskPass" => {
+            let (id, answer) = (a.get::<u64>(0)?, a.get::<Option<String>>(1)?);
+            to_value(backend.askpass.as_ref().is_some_and(|p| p.answer(id, answer)))
         }
         "openTerminal" => {
             let terminal = store().preference_str("externalTerminal").unwrap_or_else(|| "Terminal".into());
@@ -298,6 +309,22 @@ fn state_file(app: &AppHandle) -> PathBuf {
     file
 }
 
+/// The channel git and ssh use to ask the user for credentials (see askpass.rs); prompts go to every window, and the
+/// first answer wins.
+fn start_askpass(app: &AppHandle) -> Option<Arc<askpass::AskPass>> {
+    let exe = std::env::current_exe().ok()?;
+    let emitter = app.clone();
+    let emit = Box::new(move |e: askpass::AskPassEvent| {
+        let _ = match e {
+            askpass::AskPassEvent::Prompt(p) => emitter.emit(EVT_ASKPASS, p),
+            askpass::AskPassEvent::Done(id) => emitter.emit(EVT_ASKPASS_DONE, id),
+        };
+    });
+    let (askpass, serve) = askpass::AskPass::start(exe, emit).ok()?;
+    tauri::async_runtime::spawn(serve);
+    Some(askpass)
+}
+
 /// GUI apps on macOS start with a minimal PATH; make Homebrew-installed git, git-lfs and editors reachable.
 fn extend_path() {
     if cfg!(target_os = "macos") {
@@ -331,8 +358,14 @@ pub fn run() {
             // read the login shell's environment now, so the first commit or push doesn't wait for it
             tauri::async_runtime::spawn(shell_env::shell_env());
             let handle = app.handle().clone();
+            let git = Arc::new(GitService::new(Arc::new(EmitHooks(handle.clone()))));
+            let askpass = start_askpass(&handle);
+            if let Some(a) = &askpass {
+                git.set_askpass(a.clone());
+            }
             app.manage(Backend {
-                git: Arc::new(GitService::new(Arc::new(EmitHooks(handle.clone())))),
+                git,
+                askpass,
                 store: Mutex::new(AppStateStore::new(state_file(&handle))),
                 ai: Mutex::new(AiStore::new(state_file(&handle).with_file_name("ai.json"))),
                 ptys: Arc::new(PtyManager::default()),

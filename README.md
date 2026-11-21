@@ -11,7 +11,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for scope and design choices, a
 - Welcome screen with recent and favourite repositories, and discovery of repositories in chosen folders
 - Workspaces: named groups of repositories with branch, ahead/behind and change counts for each
 - `karen [path]` command line tool, `karen://` links, and drag and drop of folders onto the window
-- File watcher that refreshes the view, and auto-fetch on an interval with a "behind" banner
+- File watcher that refreshes the view (ignoring what `.gitignore` excludes), and auto-fetch on an interval with a "behind" banner
+- Clone, fetch, pull and push can be stopped from the toolbar; a fetch never holds up committing
+- Username, password, SSH key passphrase and host key prompts from git and ssh appear in a dialog (nothing is stored)
 
 ### Commit graph
 - Virtualised commit graph with its own lane layout, in a rich (avatars) or compact style

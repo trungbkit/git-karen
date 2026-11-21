@@ -104,6 +104,9 @@ const app: AppApi = {
   onUpdateStatus: (cb) => subscribe(IPC.update, cb),
   onRepoChanged: (cb) => subscribe(IPC.repoChanged, cb),
   onWatchFailed: (cb) => subscribe(IPC.watchFailed, cb),
+  onAskPass: (cb) => subscribe(IPC.askpass, cb),
+  onAskPassDone: (cb) => subscribe(IPC.askpassDone, cb),
+  answerAskPass: (id, answer) => appCall('answerAskPass', id, answer),
   onProgress: (cb) => subscribe(IPC.progress, cb),
   onCommand: (cb) => subscribe<string>(IPC.command, cb),
   onFullscreenChange(cb) {

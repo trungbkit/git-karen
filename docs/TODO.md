@@ -1,7 +1,6 @@
 # Open work
 
 ## Not built yet
-- AskPass prompt for HTTPS credentials and SSH passphrases.
 - Sparse checkout and shallow clone options.
 - Built-in file editor.
 - Bitbucket and Azure DevOps APIs (today they only get remote detection and web links).
@@ -9,6 +8,10 @@
 
 ## Needs manual testing in the app
 Each feature below has unit or integration tests, but nobody has clicked through it in a running app yet.
+- Credential prompts: clone a private HTTPS repository without a credential helper; push over SSH with a key that has a passphrase and is not in ssh-agent; a first SSH connection to a new host (host key dialog). On macOS and on Linux or Windows. Git commands run by the hosting integration (pull request checkout) do not use the dialog yet.
+- Stopping a clone of a large repository, a fetch and a push from the toolbar; committing while a fetch hangs.
+- The error boundaries: temporarily throw in `DiffView`, `LeftPanel` and a dialog and check the rest of the window keeps working.
+- The file watcher on Linux (one inotify watch per folder that is not ignored), and the "Automatic refresh is off" toast after lowering `fs.inotify.max_user_watches`.
 - Undo toasts for each dangerous action.
 - Keyboard-only hunk staging, and the stage → commit → push flow without a mouse.
 - Compare view (two commits; branch against the default branch).

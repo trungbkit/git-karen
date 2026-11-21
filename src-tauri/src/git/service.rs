@@ -137,6 +137,8 @@ pub struct GitService {
     running: Mutex<HashMap<String, Vec<(u64, CancelToken)>>>,
     next_op: AtomicU64,
     watchers: Mutex<HashMap<String, RepoWatcher>>,
+    /// Where remote commands send credential prompts; unset in tests and when the channel could not start
+    askpass: std::sync::OnceLock<Arc<crate::askpass::AskPass>>,
 }
 
 /// A remote operation in flight, which `cancel_operation` can stop. Leaves the registry when dropped.
@@ -168,7 +170,13 @@ impl GitService {
             running: Mutex::default(),
             next_op: AtomicU64::new(0),
             watchers: Mutex::default(),
+            askpass: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Send the credential prompts of remote commands (fetch, pull, push, clone, ...) to the user.
+    pub fn set_askpass(&self, askpass: Arc<crate::askpass::AskPass>) {
+        let _ = self.askpass.set(askpass);
     }
 
     /// IPC entry point: `method(...args)` for every method of the TypeScript `GitApi`; anything else is rejected.
@@ -442,9 +450,12 @@ impl GitService {
         self.lock_or_cancel(&self.locks, repo, op).await
     }
 
-    /// Options of a remote command: progress events under `name`, stopped by `op`'s cancel token.
+    /// Options of a remote command: progress events under `name`, stopped by `op`'s cancel token, credential
+    /// prompts shown in the app.
     pub(super) fn remote_opts(&self, repo: &str, name: &str, op: &RemoteOp<'_>) -> Opts {
-        Opts::default().progress(self.progress(repo, name)).cancel(&op.token)
+        let mut opts = Opts::default().progress(self.progress(repo, name)).cancel(&op.token);
+        opts.askpass = self.askpass.get().and_then(|a| a.session(repo, name)).map(Arc::new);
+        opts
     }
 
     /// Stop every remote operation running (or waiting for its lock) on `key`: a repo, or a clone's destination.

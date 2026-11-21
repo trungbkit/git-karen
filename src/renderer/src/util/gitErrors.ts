@@ -58,7 +58,8 @@ const RULES: Rule[] = [
     kind: 'hostKey',
     test: /Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i,
     hint: () => ({
-      message: 'SSH does not trust the server yet. Connect once from a terminal (e.g. ssh -T git@github.com) and accept its key, then try again.',
+      message:
+        "SSH does not trust the server yet, or its key changed. Try again and check the fingerprint Karen shows before trusting it. A changed key can mean the server was reinstalled, or that someone is intercepting the connection: remove the old key from ~/.ssh/known_hosts only once you know which.",
       actions: []
     })
   },
@@ -67,7 +68,7 @@ const RULES: Rule[] = [
     test: /Authentication failed|Permission denied \((?:publickey|keyboard-interactive)|could not read (?:Username|Password)|terminal prompts disabled|Invalid username or password|HTTP Basic: Access denied|The requested URL returned error: 40[13]|Repository not found|Permission to .+ denied to/i,
     hint: () => ({
       message:
-        'The remote refused your credentials (or the repository is private and you are not signed in). Check the account and key or credential helper git uses for this remote, and the identity configured for it.',
+        'The remote refused your credentials, the sign-in was cancelled, or the repository is private and you are not signed in. Try again and enter them when Karen asks (with a personal access token as the password on GitHub and GitLab); a credential helper or ssh-agent saves you from typing them each time.',
       actions: [{ id: 'openIdentity', label: 'Open Git identity' }]
     })
   },

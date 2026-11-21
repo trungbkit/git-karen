@@ -597,6 +597,19 @@ export interface WatchFailedEvent {
   message: string
 }
 
+/** git or ssh asks the user something during a remote operation (src-tauri/src/askpass.rs) */
+export interface AskPassPrompt {
+  id: number
+  /** The repository, or a clone's destination folder */
+  repo: string
+  /** The git operation asking, e.g. "fetch", "push", "clone" */
+  operation: string
+  /** Exactly what git or ssh asked, e.g. "Password for 'https://alice@github.com': " */
+  prompt: string
+  /** ssh's SSH_ASKPASS_PROMPT: "confirm" (a yes/no question) or "none" (a notice) */
+  sshPrompt: string | null
+}
+
 /** Long-running git output streamed to the renderer (fetch/pull/push/clone progress). */
 export interface ProgressEvent {
   repo: string
@@ -910,6 +923,12 @@ export interface AppApi {
   onRepoChanged(cb: (e: RepoChangedEvent) => void): () => void
   /** Automatic refresh stopped working for a repo (at most once per watch). Returns an unsubscribe fn. */
   onWatchFailed(cb: (e: WatchFailedEvent) => void): () => void
+  /** git or ssh needs a username, password, passphrase or a yes/no answer. Returns an unsubscribe fn. */
+  onAskPass(cb: (prompt: AskPassPrompt) => void): () => void
+  /** A prompt was answered (maybe in another window), cancelled or abandoned by git */
+  onAskPassDone(cb: (id: number) => void): () => void
+  /** Reply to a prompt; null cancels it (git then stops with an authentication error) */
+  answerAskPass(id: number, answer: string | null): Promise<boolean>
   onProgress(cb: (e: ProgressEvent) => void): () => void
   /** Menu / global commands dispatched from the main process (e.g. "view:toggleFuzzyFinder") */
   onCommand(cb: (command: string) => void): () => void
@@ -1005,6 +1024,8 @@ export function isCancelled(e: unknown): boolean {
 export const IPC = {
   repoChanged: 'evt:repoChanged',
   watchFailed: 'evt:watchFailed',
+  askpass: 'evt:askpass',
+  askpassDone: 'evt:askpassDone',
   progress: 'evt:progress',
   command: 'evt:command',
   openRequests: 'evt:openRequests',

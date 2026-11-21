@@ -27,6 +27,8 @@ import { Splitter } from './ui/Splitter'
 import { ErrorBoundary } from './ui/ErrorBoundary'
 import { DEFAULT_PREFERENCES } from '@shared/types'
 import { WorkspaceView } from './components/WorkspaceView'
+import { AskPassDialog } from './components/AskPassDialog'
+import { useAskPassEvents } from './state/askpass'
 import { useFileDragHint, useOpenRequests } from './actions/openActions'
 import { applyAppearance, fontStack } from './ui/appearance'
 import { syncWindowBackground, useSystemAppearance, useWindowActive } from './ui/systemAppearance'
@@ -88,6 +90,7 @@ export function App() {
   useOpenRequests()
   useProgressEvents()
   useUpdateEvents()
+  useAskPassEvents()
   const draggingFiles = useFileDragHint()
   const workspaceTab = useStore((s) => s.activeTab === WORKSPACE_TAB)
   // a dialog that failed clears once another one opens (or none)
@@ -167,6 +170,9 @@ export function App() {
         <Modals />
       </ErrorBoundary>
       <DialogHost />
+      <ErrorBoundary region="The sign-in dialog">
+        <AskPassDialog />
+      </ErrorBoundary>
       <ContextMenuHost />
       <Toasts />
       {draggingFiles && (

@@ -54,6 +54,8 @@ pub struct Opts {
     pub idle_timeout: Option<Duration>,
     /// Stop the command when this token is cancelled; it then fails with `CANCELLED`
     pub cancel: Option<CancelToken>,
+    /// Credential prompts of git and ssh go to the app (askpass.rs); the token lives as long as these options
+    pub askpass: Option<Arc<crate::askpass::Session>>,
 }
 
 impl Opts {
@@ -172,6 +174,9 @@ pub async fn git_bytes(cwd: &Path, args: &[String], opts: Opts) -> Result<RawOut
         .kill_on_drop(true);
     if opts.read_only {
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
+    }
+    if let Some(session) = &opts.askpass {
+        cmd.envs(session.env());
     }
     for (k, v) in &opts.env {
         cmd.env(k, v);
