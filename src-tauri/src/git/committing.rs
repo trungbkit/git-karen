@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::exec::{git, Opts};
 use super::parse::{parse_diff, US};
-use super::recovery::rev_arg;
+use super::args::{config_key, rev_arg};
 use super::service::{GitService, Res};
 use crate::types::*;
 
@@ -147,7 +147,7 @@ impl GitService {
         if global || repo.is_none() {
             args.push("--global".into());
         }
-        args.extend(a(&["--unset", key]));
+        args.extend(a(&["--unset", config_key(key)?]));
         let cwd = repo.map(PathBuf::from).unwrap_or_else(|| std::env::home_dir().unwrap_or_else(|| PathBuf::from("/")));
         git(&cwd, &args, Opts::default().ok(&[0, 5])).await?;
         Ok(())

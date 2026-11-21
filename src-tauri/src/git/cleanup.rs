@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::exec::{git, Opts};
 use super::parse::*;
-use super::recovery::rev_arg;
+use super::args::rev_arg;
 use super::service::{match_remote, GitService, Res};
 use crate::types::*;
 

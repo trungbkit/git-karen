@@ -12,7 +12,7 @@ use tokio::sync::OwnedMutexGuard;
 
 use super::exec::{git, CancelToken, LineSink, Opts, Output, CANCELLED};
 use super::parse::*;
-use super::recovery::rev_arg;
+use super::args::{branch_name, config_key, object_arg, path_arg, remote_name, remote_url, rev_arg, tag_name};
 use super::watcher::{RepoWatcher, WatchConfig, WatchEvent};
 use crate::types::*;
 
@@ -566,12 +566,15 @@ impl GitService {
     }
 
     pub async fn init(&self, path: &str, default_branch: Option<String>) -> Res<RepoInfo> {
+        let branch = default_branch.unwrap_or_else(|| "main".into());
+        branch_name(&branch)?;
         tokio::fs::create_dir_all(path).await.map_err(io_err)?;
-        self.write(path, args!["init", "-b", default_branch.unwrap_or_else(|| "main".into())]).await?;
+        self.write(path, args!["init", "-b", branch]).await?;
         self.open(path).await
     }
 
     pub async fn clone_repo(&self, url: &str, dest: &str) -> Res<RepoInfo> {
+        remote_url(url)?;
         let dest = std::path::absolute(dest).map_err(io_err)?;
         let parent = dest.parent().unwrap_or(Path::new("/")).to_string_lossy().into_owned();
         let dest = dest.to_string_lossy().into_owned();
@@ -579,7 +582,7 @@ impl GitService {
         let existed = Path::new(&dest).exists();
         let op = self.remote_op(&dest);
         let opts = self.remote_opts(&dest, "clone", &op);
-        let res = self.write_opts(&parent, args!["clone", "--progress", "--recurse-submodules", url, dest.as_str()], opts).await;
+        let res = self.write_opts(&parent, args!["clone", "--progress", "--recurse-submodules", "--", url, dest.as_str()], opts).await;
         if let Err(e) = res {
             // a stopped clone may leave a partial checkout behind; git refuses a non-empty destination, so whatever
             // is there now came from this clone
@@ -787,6 +790,8 @@ impl GitService {
     }
 
     pub async fn commit_detail(&self, repo: &str, sha: &str) -> Res<CommitDetail> {
+        let sha = rev_arg(sha)?;
+        let sha = sha.as_str();
         let out = self.out(repo, args!["log", "-1", "--decorate=full", format!("--format={LOG_FORMAT}"), sha]).await?;
         let commit = parse_log(&out).into_iter().next().ok_or_else(|| format!("Commit not found: {sha}"))?;
         let base = match commit.parents.first() {
@@ -852,6 +857,7 @@ impl GitService {
                 (out, path)
             }
             DiffTarget::Commit { sha, path, old_path } => {
+                let sha = rev_arg(&sha)?;
                 let parents = self.parents(repo, &sha).await?;
                 // both paths of a rename, so git pairs them up instead of showing an added file
                 let mut paths = args!["--", path.as_str()];
@@ -869,7 +875,8 @@ impl GitService {
                 (out, path)
             }
             DiffTarget::Compare { from, to, path } => {
-                (self.out(repo, with(args![from.as_str(), to.as_str(), "--", path.as_str()])).await?, path)
+                let (from, to) = (rev_arg(&from)?, rev_arg(&to)?);
+                (self.out(repo, with(args![from, to, "--", path.as_str()])).await?, path)
             }
         };
         if out.starts_with("diff --cc") || out.starts_with("diff --combined") {
@@ -889,7 +896,7 @@ impl GitService {
                 let bytes = tokio::fs::read(Path::new(repo).join(path)).await.map_err(|e| format!("{path}: {e}"))?;
                 Ok(String::from_utf8_lossy(&bytes).into_owned())
             }
-            Some(rev) => self.out(repo, args!["show", format!("{rev}:{path}")]).await,
+            Some(rev) => self.out(repo, args!["show", object_arg(&rev, path)?]).await,
         }
     }
 
@@ -1084,6 +1091,8 @@ impl GitService {
     // -------------------------------------------------------- branches & tags
 
     pub async fn create_branch(&self, repo: &str, name: &str, start: Option<String>, checkout: bool) -> Res<()> {
+        branch_name(name)?;
+        let start = start.as_deref().map(rev_arg).transpose()?;
         let _g = self.lock(repo).await;
         let a = if checkout { args!["checkout", "-q", "-b", name] } else { args!["branch", name] };
         self.write(repo, [a, start.into_iter().collect()].concat()).await?;
@@ -1091,13 +1100,15 @@ impl GitService {
     }
 
     pub async fn delete_branch(&self, repo: &str, name: &str, force: bool) -> Res<()> {
+        let name = branch_name(name.strip_prefix("refs/heads/").unwrap_or(name))?;
         let _g = self.lock(repo).await;
-        let name = name.strip_prefix("refs/heads/").unwrap_or(name);
         self.write(repo, args!["branch", if force { "-D" } else { "-d" }, name]).await?;
         Ok(())
     }
 
     pub async fn delete_remote_branch(&self, repo: &str, remote: &str, name: &str) -> Res<()> {
+        remote_name(remote)?;
+        branch_name(name)?;
         let op = self.remote_op(repo);
         let _n = self.net_lock(repo, &op).await?;
         let opts = self.remote_opts(repo, "push", &op);
@@ -1106,25 +1117,30 @@ impl GitService {
     }
 
     pub async fn rename_branch(&self, repo: &str, old: &str, new: &str) -> Res<()> {
+        branch_name(old)?;
+        branch_name(new)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["branch", "-m", old, new]).await?;
         Ok(())
     }
 
     pub async fn checkout(&self, repo: &str, reference: &str) -> Res<()> {
+        let reference = rev_arg(reference.strip_prefix("refs/heads/").unwrap_or(reference))?;
         let _g = self.lock(repo).await;
-        self.write(repo, args!["checkout", "-q", reference.strip_prefix("refs/heads/").unwrap_or(reference)]).await?;
+        self.write(repo, args!["checkout", "-q", reference]).await?;
         Ok(())
     }
 
     pub async fn checkout_remote(&self, repo: &str, remote_ref: &str, local_name: Option<String>) -> Res<()> {
+        let short = rev_arg(remote_ref.strip_prefix("refs/remotes/").unwrap_or(remote_ref))?;
+        let short = short.as_str();
         let _g = self.lock(repo).await;
-        let short = remote_ref.strip_prefix("refs/remotes/").unwrap_or(remote_ref);
         let remote = match_remote(&self.remote_names(repo).await?, short);
         let local = local_name.unwrap_or_else(|| match &remote {
             Some(r) => short[r.len() + 1..].to_string(),
             None => short.to_string(),
         });
+        branch_name(&local)?;
         if self.verify(repo, &format!("refs/heads/{local}")).await? {
             self.write(repo, args!["checkout", "-q", local]).await?;
         } else {
@@ -1134,13 +1150,16 @@ impl GitService {
     }
 
     pub async fn set_upstream(&self, repo: &str, branch: &str, upstream: &str) -> Res<()> {
+        branch_name(branch)?;
+        let up = rev_arg(upstream.strip_prefix("refs/remotes/").unwrap_or(upstream))?;
         let _g = self.lock(repo).await;
-        let up = upstream.strip_prefix("refs/remotes/").unwrap_or(upstream);
         self.write(repo, args!["branch", format!("--set-upstream-to={up}"), branch]).await?;
         Ok(())
     }
 
     pub async fn create_tag(&self, repo: &str, name: &str, sha: &str, message: Option<String>) -> Res<()> {
+        tag_name(name)?;
+        let sha = rev_arg(sha)?;
         let _g = self.lock(repo).await;
         match message.filter(|m| !m.is_empty()) {
             Some(m) => self.write(repo, args!["tag", "-a", name, sha, "-m", m]).await?,
@@ -1150,12 +1169,15 @@ impl GitService {
     }
 
     pub async fn delete_tag(&self, repo: &str, name: &str) -> Res<()> {
+        tag_name(name)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["tag", "-d", name]).await?;
         Ok(())
     }
 
     pub async fn push_tag(&self, repo: &str, remote: &str, name: &str) -> Res<()> {
+        remote_name(remote)?;
+        tag_name(name)?;
         let op = self.remote_op(repo);
         let _n = self.net_lock(repo, &op).await?;
         let opts = self.remote_opts(repo, "push", &op);
@@ -1164,6 +1186,8 @@ impl GitService {
     }
 
     pub async fn delete_remote_tag(&self, repo: &str, remote: &str, name: &str) -> Res<()> {
+        remote_name(remote)?;
+        tag_name(name)?;
         let op = self.remote_op(repo);
         let _n = self.net_lock(repo, &op).await?;
         let opts = self.remote_opts(repo, "push", &op);
@@ -1175,6 +1199,7 @@ impl GitService {
     // --------------------------------------------------- history manipulation
 
     pub async fn merge(&self, repo: &str, reference: &str, opts: MergeOptions) -> Res<()> {
+        let reference = rev_arg(reference)?;
         let _g = self.lock(repo).await;
         let mut a = args!["merge", "--no-edit"];
         if opts.ff_only == Some(true) {
@@ -1186,18 +1211,21 @@ impl GitService {
         if opts.squash == Some(true) {
             a.push("--squash".into());
         }
-        a.push(reference.into());
+        a.push(reference);
         self.write(repo, a).await?;
         Ok(())
     }
 
     pub async fn rebase(&self, repo: &str, onto: &str) -> Res<()> {
+        let onto = rev_arg(onto)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["rebase", onto]).await?;
         Ok(())
     }
 
     pub async fn interactive_rebase(&self, repo: &str, onto: &str, todo: Vec<RebaseTodoItem>) -> Res<()> {
+        let onto = rev_arg(onto)?;
+        let onto = onto.as_str();
         // The todo list is executed by git, so only known actions and plain object ids may reach it.
         for item in &todo {
             if !["pick", "reword", "squash", "fixup", "drop", "edit"].contains(&item.action.as_str()) {
@@ -1246,12 +1274,15 @@ impl GitService {
     }
 
     pub async fn cherry_pick(&self, repo: &str, shas: Vec<String>) -> Res<()> {
+        let shas = shas.iter().map(|s| rev_arg(s)).collect::<Res<Vec<_>>>()?;
         let _g = self.lock(repo).await;
         self.write(repo, [args!["cherry-pick"], shas].concat()).await?;
         Ok(())
     }
 
     pub async fn revert(&self, repo: &str, sha: &str) -> Res<()> {
+        let sha = rev_arg(sha)?;
+        let sha = sha.as_str();
         let _g = self.lock(repo).await;
         let mut a = args!["revert", "--no-edit"];
         if self.parents(repo, sha).await?.len() > 1 {
@@ -1266,6 +1297,7 @@ impl GitService {
         if !["soft", "mixed", "hard", "keep"].contains(&mode) {
             return Err(format!("Invalid reset mode: {mode}"));
         }
+        let sha = rev_arg(sha)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["reset", "-q", format!("--{mode}"), sha]).await?;
         Ok(())
@@ -1341,13 +1373,15 @@ impl GitService {
 
     /// `background`: an automatic fetch, stopped after `BACKGROUND_FETCH_IDLE` without any output.
     pub async fn fetch(&self, repo: &str, remote: Option<String>, prune: bool, background: bool) -> Res<()> {
+        let remote = remote.filter(|r| !r.is_empty());
+        remote.as_deref().map(remote_name).transpose()?;
         let op = self.remote_op(repo);
         let _n = self.net_lock(repo, &op).await?;
         let mut a = args!["fetch", "--progress", "--tags"];
         if prune {
             a.push("--prune".into());
         }
-        a.push(remote.filter(|r| !r.is_empty()).unwrap_or_else(|| "--all".into()));
+        a.push(remote.unwrap_or_else(|| "--all".into()));
         let opts = self.remote_opts(repo, "fetch", &op).idle_timeout(background.then_some(BACKGROUND_FETCH_IDLE));
         self.write_opts(repo, a, opts).await?;
         Ok(())
@@ -1371,6 +1405,8 @@ impl GitService {
 
     pub async fn push(&self, repo: &str, opts: PushOptions) -> Res<()> {
         // push only reads local refs and updates the remote-tracking ref (and, with --set-upstream, the config)
+        opts.branch.as_deref().map(branch_name).transpose()?;
+        opts.remote.as_deref().map(remote_name).transpose()?;
         let op = self.remote_op(repo);
         let _n = self.net_lock(repo, &op).await?;
         let branch = match opts.branch {
@@ -1406,18 +1442,23 @@ impl GitService {
     }
 
     pub async fn add_remote(&self, repo: &str, name: &str, url: &str) -> Res<()> {
+        remote_name(name)?;
+        remote_url(url)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["remote", "add", name, url]).await?;
         Ok(())
     }
 
     pub async fn remove_remote(&self, repo: &str, name: &str) -> Res<()> {
+        remote_name(name)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["remote", "remove", name]).await?;
         Ok(())
     }
 
     pub async fn edit_remote(&self, repo: &str, name: &str, url: &str) -> Res<()> {
+        remote_name(name)?;
+        remote_url(url)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["remote", "set-url", name, url]).await?;
         Ok(())
@@ -1438,11 +1479,12 @@ impl GitService {
     }
 
     pub async fn submodule_add(&self, repo: &str, url: &str, path: &str) -> Res<()> {
+        remote_url(url)?;
         let op = self.remote_op(repo);
         let _n = self.net_lock(repo, &op).await?;
         let _g = self.write_lock(repo, &op).await?;
         let opts = self.remote_opts(repo, "submodule", &op);
-        self.write_opts(repo, args!["submodule", "add", "--progress", url, path], opts).await?;
+        self.write_opts(repo, args!["submodule", "add", "--progress", "--", url, path], opts).await?;
         Ok(())
     }
 
@@ -1454,7 +1496,11 @@ impl GitService {
         new_branch: Option<String>,
         lock: bool,
     ) -> Res<()> {
+        // checked without the refs/heads/ prefix, as the existing branch is passed below
+        let short = rev_arg(reference.strip_prefix("refs/heads/").unwrap_or(reference))?;
+        new_branch.as_deref().map(branch_name).transpose()?;
         let _g = self.lock(repo).await;
+        // the repository path is absolute, so the target cannot start with "-"
         let target = Path::new(repo).join(path).to_string_lossy().into_owned();
         let mut a = args!["worktree", "add"];
         if lock {
@@ -1462,13 +1508,14 @@ impl GitService {
         }
         match new_branch {
             Some(b) => a.extend(args!["-b", b, target, reference]),
-            None => a.extend(args![target, reference.strip_prefix("refs/heads/").unwrap_or(reference)]),
+            None => a.extend(args![target, short]),
         }
         self.write(repo, a).await?;
         Ok(())
     }
 
     pub async fn worktree_remove(&self, repo: &str, path: &str, force: bool) -> Res<()> {
+        path_arg(path)?;
         let _g = self.lock(repo).await;
         let mut a = args!["worktree", "remove"];
         if force {
@@ -1480,6 +1527,7 @@ impl GitService {
     }
 
     pub async fn worktree_lock(&self, repo: &str, path: &str, lock: bool, reason: Option<String>) -> Res<()> {
+        path_arg(path)?;
         let _g = self.lock(repo).await;
         let mut a = args!["worktree", if lock { "lock" } else { "unlock" }];
         if let Some(r) = reason.filter(|r| lock && !r.trim().is_empty()) {
@@ -1504,7 +1552,7 @@ impl GitService {
         if repo.is_none() {
             a.push("--global".into());
         }
-        a.extend(args!["--get", key]);
+        a.extend(args!["--get", config_key(key)?]);
         let r = git(&cwd, &a, Opts::read().ok(&[0, 1])).await?;
         Ok((r.code == 0).then(|| r.stdout.strip_suffix('\n').unwrap_or(&r.stdout).to_string()))
     }
@@ -1515,7 +1563,8 @@ impl GitService {
         if global || repo.is_none() {
             a.push("--global".into());
         }
-        a.extend(args![key, value]);
+        // options end at the key, so a value that starts with "-" is still read as the value
+        a.extend(args![config_key(key)?, value]);
         git(&cwd, &a, Opts::default()).await?;
         Ok(())
     }
@@ -1547,6 +1596,8 @@ impl GitService {
     }
 
     pub async fn gitflow_init(&self, repo: &str, config: GitflowConfig) -> Res<()> {
+        branch_name(&config.master)?;
+        branch_name(&config.develop)?;
         let _g = self.lock(repo).await;
         for (k, v) in [
             ("gitflow.branch.master", &config.master),
@@ -1597,6 +1648,13 @@ impl GitService {
     pub async fn gitflow_finish(&self, repo: &str, kind: &str, name: &str, opts: GitflowFinishOptions) -> Res<()> {
         let cfg = self.require_gitflow(repo).await?;
         let branch = format!("{}{name}", Self::gitflow_prefix(&cfg, kind)?);
+        let tag = format!("{}{name}", cfg.version_tag);
+        for b in [&branch, &cfg.develop, &cfg.master] {
+            branch_name(b)?;
+        }
+        if kind != "feature" {
+            tag_name(&tag)?;
+        }
         let _g = self.lock(repo).await;
         let merge_into = |target: String, source: String| async move {
             self.write(repo, args!["checkout", "-q", target]).await?;
@@ -1606,7 +1664,6 @@ impl GitService {
         if kind == "feature" {
             merge_into(cfg.develop.clone(), branch.clone()).await?;
         } else {
-            let tag = format!("{}{name}", cfg.version_tag);
             merge_into(cfg.master.clone(), branch.clone()).await?;
             let msg = opts.tag_message.filter(|m| !m.is_empty()).unwrap_or_else(|| tag.clone());
             self.write(repo, args!["tag", "-a", tag.as_str(), "-m", msg]).await?;
@@ -1638,6 +1695,7 @@ impl GitService {
     }
 
     pub async fn lfs_track(&self, repo: &str, pattern: &str) -> Res<()> {
+        path_arg(pattern)?;
         let _g = self.lock(repo).await;
         if !self.pre_push_hook(repo).await.contains("lfs") {
             self.write(repo, args!["lfs", "install", "--local"]).await?;

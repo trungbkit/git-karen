@@ -31,3 +31,4 @@ Karen is a local-first desktop Git client. It talks to the system `git` and, opt
 - User actions go through `src/renderer/src/actions/` and `keybindings.ts`, so the menu, command palette and shortcuts share one implementation.
 - New preferences go in `PreferencesModal.tsx` and the `prefs` state in `state/store.ts`.
 - Pure logic (layout, parsers, text) gets vitest tests; Rust parsers get `cargo test`. Git operations get integration tests against real temporary repositories.
+- A string from IPC or a hosting API that becomes a positional git argument goes through a check in `git/args.rs` (`rev_arg`, `branch_name`, `tag_name`, `remote_name`, `remote_url`, `config_key`, `path_arg`), which rejects empty values, a leading `-` and control characters; paths go after `--`.

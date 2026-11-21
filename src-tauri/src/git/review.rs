@@ -2,6 +2,7 @@
 // for image diffs.
 use std::path::Path;
 
+use super::args::{object_arg, rev_arg};
 use super::exec::{git_bytes, Opts};
 use super::parse::{parse_blame_porcelain, parse_follow_paths, parse_log, LOG_FORMAT};
 use super::service::{GitService, Res};
@@ -53,7 +54,7 @@ impl GitService {
     /// commit that wrote them, in whichever file that was.
     pub async fn blame(&self, repo: &str, path: &str, rev: Option<String>) -> Res<Vec<BlameLine>> {
         let mut args = a(&["-c", "core.quotepath=false", "blame", "--porcelain", "-M", "-C"]);
-        args.extend(rev.filter(|r| !r.is_empty()));
+        args.extend(rev.filter(|r| !r.is_empty()).as_deref().map(rev_arg).transpose()?);
         args.extend(a(&["--", path]));
         Ok(parse_blame_porcelain(&self.out(repo, args).await?))
     }
@@ -72,7 +73,7 @@ impl GitService {
                 }
             }
             Some(rev) => {
-                let object = format!("{rev}:{path}");
+                let object = object_arg(&rev, path)?;
                 let size = self.read(repo, a(&["cat-file", "-s", &object]), &[0, 128]).await?;
                 if size.code != 0 {
                     return Ok(None);

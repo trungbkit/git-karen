@@ -1,3 +1,4 @@
+pub mod args;
 pub mod cleanup;
 pub mod committing;
 pub mod daily;

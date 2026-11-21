@@ -9,6 +9,9 @@ use super::exec::{git, Opts, CANCELLED};
 use super::service::{GitService, NoHooks};
 use crate::types::*;
 
+#[path = "service_arg_tests.rs"]
+mod arg_checks;
+
 static ISOLATE: Once = Once::new();
 
 /// Point git at a throwaway global config, exactly once and before any git process runs.

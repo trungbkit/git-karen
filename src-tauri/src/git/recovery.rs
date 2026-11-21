@@ -2,6 +2,7 @@
 // them, and previews of what an operation would lose.
 use std::path::Path;
 
+use super::args::{branch_name, remote_name, rev_arg};
 use super::exec::Opts;
 use super::parse::*;
 use super::service::{GitService, Res};
@@ -14,14 +15,6 @@ const MAX_COUNTED_BYTES: u64 = 4 * 1024 * 1024;
 
 fn a(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
-}
-
-/// Revisions come from the renderer; never let one be read as an option.
-pub(super) fn rev_arg(rev: &str) -> Res<String> {
-    if rev.is_empty() || rev.starts_with('-') {
-        return Err(format!("Invalid revision: {rev}"));
-    }
-    Ok(rev.to_string())
 }
 
 fn is_executable(meta: &std::fs::Metadata) -> bool {
@@ -173,7 +166,8 @@ impl GitService {
         let current = self.current_branch(repo).await?;
         match branch {
             Some(b) if Some(&b) != current.as_ref() => {
-                self.write(repo, a(&["update-ref", "-m", "Karen: undo", &format!("refs/heads/{b}"), &sha])).await?
+                let target = format!("refs/heads/{}", branch_name(&b)?);
+                self.write(repo, a(&["update-ref", "-m", "Karen: undo", &target, &sha])).await?
             }
             _ => self.write(repo, a(&["reset", "-q", "--keep", &sha])).await?,
         };
@@ -208,6 +202,10 @@ impl GitService {
         let _g = self.lock(repo).await;
         let mut info = String::new();
         for b in &backups {
+            // --index-info reads NUL-terminated records: a path with a NUL in it would start another record
+            if b.path.is_empty() || b.path.contains('\0') {
+                return Err(format!("Invalid path: {}", b.path));
+            }
             match &b.blob {
                 Some(blob) => {
                     let mode = if b.executable { "100755" } else { "100644" };
@@ -239,12 +237,12 @@ impl GitService {
     pub async fn push_sha(&self, repo: &str, remote: &str, sha: &str, branch: &str, lease: Option<String>) -> Res<()> {
         let op = self.remote_op(repo);
         let _n = self.net_lock(repo, &op).await?;
-        let target = format!("refs/heads/{branch}");
+        let target = format!("refs/heads/{}", branch_name(branch)?);
         let mut args = a(&["push", "--progress"]);
         if let Some(l) = lease {
             args.push(format!("--force-with-lease={target}:{}", rev_arg(&l)?));
         }
-        args.extend([rev_arg(remote)?, format!("{}:{target}", rev_arg(sha)?)]);
+        args.extend([remote_name(remote)?.to_string(), format!("{}:{target}", rev_arg(sha)?)]);
         self.write_opts(repo, args, self.remote_opts(repo, "push", &op)).await?;
         Ok(())
     }

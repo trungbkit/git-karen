@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use tokio::process::Command;
 
+use super::args::{branch_name, remote_name, rev_arg};
 use super::service::{GitService, Res};
 use crate::types::*;
 
@@ -142,6 +143,9 @@ impl GitService {
     /// target against the would-be merge result lets changes the target already has cancel out; the merge-base
     /// (three-dot) diff is the fallback.
     pub async fn compare_branch(&self, repo: &str, from: &str, target: &str, remote: &str) -> Res<BranchComparison> {
+        rev_arg(from)?;
+        branch_name(target)?;
+        remote_name(remote)?;
         let target_ref = format!("{remote}/{target}");
         if !self.verify(repo, &format!("refs/remotes/{target_ref}")).await? {
             return Ok(BranchComparison::default());
@@ -207,6 +211,9 @@ impl GitService {
     /// remote, the source has nothing the target lacks, or a PR between them is already open. Expects the remote
     /// tracking refs to be current (fetched or just pushed).
     pub async fn create_pull_request(&self, repo: &str, remote: &str, from: &str, to: &str, title: &str, body: &str) -> Res<PullRequestResult> {
+        remote_name(remote)?;
+        branch_name(from)?;
+        branch_name(to)?;
         if !matches!(gh(repo, &a(&["--version"])).await, Ok(o) if o.code == 0) {
             return Ok(skipped("The GitHub CLI (gh) is not installed. Install it and run `gh auth login`.".into()));
         }
