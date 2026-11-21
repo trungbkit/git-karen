@@ -26,12 +26,14 @@ interface HistoryResult {
 }
 
 /** Shas matching the `path:` / `content:` filters, from `git log` over the graph's history. */
-function useHistoryMatches(repo: RepoTab, search: CommitSearch, limit: number) {
+function useHistoryMatches(repo: RepoTab, search: CommitSearch) {
   const [result, setResult] = useState<HistoryResult | null>(null)
   const commits = repo.commits
-  // the history the graph shows: rerun when it changes, and walk no further back than its oldest commit
-  const since = commits.length >= limit ? commits[commits.length - 1]?.committer.date : undefined
-  const key = needsBackend(search) ? JSON.stringify([repo.path, search.path, search.content, commits[0]?.sha, commits.length, limit]) : ''
+  // the history the graph shows: rerun when it changes (or more of it loads), and walk no further back than its
+  // oldest commit; no more matches than commits loaded can be shown
+  const since = repo.historyComplete ? undefined : commits[commits.length - 1]?.committer.date
+  const limit = Math.max(1, commits.length)
+  const key = needsBackend(search) ? JSON.stringify([repo.path, search.path, search.content, commits[0]?.sha, commits.length, repo.historyComplete]) : ''
   const request = useRef({ paths: search.path, content: search.content, since })
   request.current = { paths: search.path, content: search.content, since }
 
@@ -61,9 +63,9 @@ function useHistoryMatches(repo: RepoTab, search: CommitSearch, limit: number) {
 }
 
 /** Rows matching the search box (null when it is empty) and the text to mark in them. */
-export function useCommitSearch(repo: RepoTab, query: string, rows: GraphRow[], limit: number) {
+export function useCommitSearch(repo: RepoTab, query: string, rows: GraphRow[]) {
   const search = useMemo(() => parseSearch(query), [query])
-  const history = useHistoryMatches(repo, search, limit)
+  const history = useHistoryMatches(repo, search)
   const matches = useMemo(() => {
     if (isEmptySearch(search)) return null
     const set = new Set<number>()

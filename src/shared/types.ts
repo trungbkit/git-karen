@@ -436,6 +436,7 @@ export interface Preferences {
   uiStyle: UiStyle
   autoFetchMinutes: number
   defaultBranchName: string
+  /** Commits in the graph's first page, and in each page loaded when scrolling to its end */
   commitLimit: number
   showAuthorColumn: boolean
   showDateColumn: boolean

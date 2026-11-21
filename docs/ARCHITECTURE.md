@@ -14,7 +14,7 @@ Karen is a local-first desktop Git client. It talks to the system `git` and, opt
 | Git engine | The system `git` CLI (porcelain v2, `-z`, custom `--format`) | No native module to build; covers LFS, hooks, signing and worktrees |
 | IPC | One typed contract (`src/shared/types.ts`) and a `Result<T>` envelope | Errors keep git's stderr message across the bridge |
 | State | zustand | Enough for this size of app |
-| Graph | Own lane layout (`graph/layout.ts`), virtualised SVG rows | A pure, unit-tested function |
+| Graph | Own lane layout (`graph/layout.ts`), virtualised SVG rows. History loads in pages (`state/logPaging.ts`): the first `commitLimit` commits, then the log is reloaded from the top with a larger limit when scrolling nears the end; refreshes keep the larger limit, and pages go through the same per-repo queue as refreshes | A pure, unit-tested function; reloading from the top instead of `--skip` cannot repeat or miss commits when history moves between loads |
 | Partial staging | Patches built in the renderer (`diff/patch.ts`), applied with `git apply --cached [--reverse] --recount` | The usual model for Git GUIs |
 | Merge tool | Own diff3 (`diff/merge3.ts`) | No dependency |
 | Interactive rebase | `GIT_SEQUENCE_EDITOR` set to a command that copies a prepared todo list into place | Lets git drive the rebase |

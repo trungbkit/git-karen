@@ -33,28 +33,37 @@ type SectionId = 'local' | 'remote' | 'tags' | 'stashes' | 'submodules' | 'workt
 const DEFAULT_COLLAPSED: Record<string, boolean> = { tags: true }
 
 /** Select a ref's commit, scroll the graph to it and flash the row; explain when the graph does not show it. */
-function revealRef(repo: RepoTab, ref: Ref) {
+async function revealRef(repo: RepoTab, ref: Ref) {
   const s = useStore.getState()
   if (repo.center.kind !== 'graph') s.setCenter({ kind: 'graph' })
   s.select({ kind: 'commit', shas: [ref.sha] })
   if (scrollToSha(ref.sha)) return
   const hidden = repo.hiddenRefs.includes(ref.fullName)
   const soloedOut = repo.soloRefs.length > 0 && !repo.soloRefs.includes(ref.fullName)
+  // wait for the graph to lay out the newly shown history
+  const revealSoon = () => setTimeout(() => scrollToSha(ref.sha), 50)
+  if (!hidden && !soloedOut) {
+    // older than the commits loaded so far: load more until it is there
+    if (await s.loadCommitsUntil(ref.sha, repo.path)) return void revealSoon()
+    const tab = useStore.getState().repos[repo.path]
+    if (!tab || tab.historyComplete) return
+    s.toast({
+      kind: 'info',
+      title: `${ref.name} is not in the graph`,
+      message: `Its commit is older than the ${tab.commits.length.toLocaleString()} newest commits.`
+    })
+    return
+  }
   const showIt = () => {
     if (hidden) s.toggleHidden(ref.fullName)
     else s.updateRepo(repo.path, { soloRefs: [] })
-    // wait for the graph to lay out the newly shown history
-    setTimeout(() => scrollToSha(ref.sha), 50)
+    revealSoon()
   }
   s.toast({
     kind: 'info',
     title: `${ref.name} is not in the graph`,
-    message: hidden
-      ? 'It is hidden in the graph.'
-      : soloedOut
-        ? 'Other branches are soloed.'
-        : `Its commit is older than the ${s.prefs.commitLimit} commits loaded (Preferences > General).`,
-    action: hidden || soloedOut ? { label: hidden ? 'Show it' : 'Show all', run: showIt } : undefined
+    message: hidden ? 'It is hidden in the graph.' : 'Other branches are soloed.',
+    action: { label: hidden ? 'Show it' : 'Show all', run: showIt }
   })
 }
 
@@ -374,7 +383,7 @@ function RefRow({ repo, refItem: ref, label, match, depth }: { repo: RepoTab; re
       aria-label={`${ref.isHead ? 'Current branch ' : ''}${label}${ref.ahead ? `, ${ref.ahead} ahead` : ''}${ref.behind ? `, ${ref.behind} behind` : ''}`}
       className={`lp-row ${ref.isHead ? 'head' : ''} ${selected ? 'selected' : ''} ${hidden ? 'hidden-ref' : ''}`}
       style={{ paddingLeft: 24 + depth * 14 }}
-      onClick={() => revealRef(repo, ref)}
+      onClick={() => void revealRef(repo, ref)}
       onDoubleClick={() => void checkoutRef(repo, ref)}
       onContextMenu={onContext}
       onMouseEnter={card.onMouseEnter}

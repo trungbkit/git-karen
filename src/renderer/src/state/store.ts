@@ -18,6 +18,7 @@ import type { PullRequest } from '@shared/integrations'
 import { closeRepoSessions } from './terminals'
 import { clearProgress } from './progress'
 import { coalesce } from './coalesce'
+import { logLimit, nextPageLimit, reachedEnd, revealLimits } from './logPaging'
 
 export type Selection =
   | { kind: 'wip' }
@@ -48,6 +49,12 @@ export interface RepoTab {
   path: string
   info: RepoInfo | null
   commits: Commit[]
+  /** Commits the log is asked for once the user scrolled past the first page (`prefs.commitLimit`); kept by refreshes */
+  logLimit?: number
+  /** The loaded log reaches the first commit: there is nothing older to load */
+  historyComplete: boolean
+  /** A page of older commits is loading */
+  loadingMore: boolean
   refs: Ref[]
   stashes: Stash[]
   remotes: Remote[]
@@ -143,6 +150,10 @@ interface StoreState {
   openWorkspaceTab(): void
   setWorkspaces(workspaces: Workspace[]): Promise<void>
   refresh(path?: string, opts?: { log?: boolean }): Promise<void>
+  /** Load older commits into the graph: one more page, or up to `limit` commits */
+  loadMoreCommits(path?: string, limit?: number): Promise<void>
+  /** Load older commits until `sha` is in the graph or history ends (up to logPaging's REVEAL_CAP); whether it is */
+  loadCommitsUntil(sha: string, path?: string): Promise<boolean>
   select(selection: Selection, path?: string): void
   setCenter(view: CenterView, path?: string): void
   updateRepo(path: string, patch: Partial<RepoTab>): void
@@ -167,6 +178,8 @@ function emptyRepo(path: string): RepoTab {
     path,
     info: null,
     commits: [],
+    historyComplete: false,
+    loadingMore: false,
     refs: [],
     stashes: [],
     remotes: [],
@@ -185,29 +198,41 @@ function emptyRepo(path: string): RepoTab {
 
 let toastId = 0
 
-/** One refresh of a repo: status, refs and the rest, plus the log when asked (or when none is loaded yet). */
-async function loadRepo(repo: string, opts: { log: boolean }) {
+interface LoadOptions {
+  /** Reload the log (always done while none is loaded) */
+  log: boolean
+  /** Reload status, refs, stashes, remotes, submodules and worktrees; a page of older commits needs only the log */
+  full: boolean
+}
+
+/**
+ * One refresh of a repo: status, refs and the rest, plus the log when asked (or when none is loaded yet). The log
+ * keeps as many commits as were loaded by scrolling (`logLimit`), read when the run starts.
+ */
+async function loadRepo(repo: string, opts: LoadOptions) {
   const get = useStore.getState
-  if (!get().repos[repo]) return
-  const { prefs } = get()
+  const tab = get().repos[repo]
+  if (!tab) return
+  const limit = logLimit(get().prefs.commitLimit, tab.logLimit)
+  const loadLog = opts.log || tab.commits.length === 0
   try {
-    const [status, refs, stashes, remotes, submodules, worktrees, commits] = await Promise.all([
-      window.git.status(repo),
-      window.git.refs(repo),
-      window.git.stashes(repo),
-      window.git.remotes(repo),
-      window.git.submodules(repo).catch(() => []),
-      window.git.worktrees(repo).catch(() => []),
-      opts.log || get().repos[repo].commits.length === 0 ? window.git.log(repo, { limit: prefs.commitLimit }) : Promise.resolve(null)
+    const [rest, commits] = await Promise.all([
+      opts.full
+        ? Promise.all([
+            window.git.status(repo),
+            window.git.refs(repo),
+            window.git.stashes(repo),
+            window.git.remotes(repo),
+            window.git.submodules(repo).catch(() => []),
+            window.git.worktrees(repo).catch(() => [])
+          ])
+        : null,
+      loadLog ? window.git.log(repo, { limit }) : null
     ])
+    const [status, refs, stashes, remotes, submodules, worktrees] = rest ?? []
     get().updateRepo(repo, {
-      status,
-      refs,
-      stashes,
-      remotes,
-      submodules,
-      worktrees,
-      ...(commits ? { commits } : {}),
+      ...(rest ? { status, refs, stashes, remotes, submodules, worktrees } : {}),
+      ...(commits ? { commits, historyComplete: reachedEnd(commits.length, limit) } : {}),
       loading: false,
       error: null
     })
@@ -217,10 +242,10 @@ async function loadRepo(repo: string, opts: { log: boolean }) {
 }
 
 /**
- * Refreshes never overlap per repo (an older result could otherwise land after a newer one): calls made while one
- * runs share a single follow-up run, which loads the log if any of them asked for it.
+ * Refreshes and loads of older commits never overlap per repo (an older result could otherwise land after a newer
+ * one): calls made while one runs share a single follow-up run, which does everything any of them asked for.
  */
-const queueRefresh = coalesce(loadRepo, (a: { log: boolean }, b: { log: boolean }) => ({ log: a.log || b.log }))
+const queueRefresh = coalesce(loadRepo, (a: LoadOptions, b: LoadOptions) => ({ log: a.log || b.log, full: a.full || b.full }))
 
 /**
  * Builds the toast of a failed `run`. actions/errorActions.ts replaces it with one that explains common git errors
@@ -351,7 +376,36 @@ export const useStore = create<StoreState>((set, get) => ({
   refresh(path, opts = {}) {
     const repo = path ?? get().activeTab
     if (!get().repos[repo]) return Promise.resolve()
-    return queueRefresh(repo, { log: !!opts.log })
+    return queueRefresh(repo, { log: !!opts.log, full: true })
+  },
+
+  async loadMoreCommits(path, target) {
+    const repo = path ?? get().activeTab
+    const tab = get().repos[repo]
+    if (!tab || tab.historyComplete) return
+    const pageSize = get().prefs.commitLimit
+    const limit = target ?? nextPageLimit(pageSize, tab.logLimit)
+    if (limit <= logLimit(pageSize, tab.logLimit)) return
+    // the limit is read when the run starts; a refresh already running finishes first with the smaller one
+    get().updateRepo(repo, { logLimit: limit, loadingMore: true })
+    await queueRefresh(repo, { log: true, full: false })
+    // a later, larger request still in flight clears it itself
+    if (get().repos[repo]?.logLimit === limit) get().updateRepo(repo, { loadingMore: false })
+  },
+
+  async loadCommitsUntil(sha, path) {
+    const repo = path ?? get().activeTab
+    const shown = () => {
+      const tab = get().repos[repo]
+      return !!tab && tab.commits.some((c) => c.sha === sha)
+    }
+    const tab = get().repos[repo]
+    if (!tab) return false
+    for (const limit of revealLimits(logLimit(get().prefs.commitLimit, tab.logLimit), get().prefs.commitLimit)) {
+      if (shown() || !get().repos[repo] || get().repos[repo].historyComplete) break
+      await get().loadMoreCommits(repo, limit)
+    }
+    return shown()
   },
 
   select(selection, path) {

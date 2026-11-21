@@ -17,6 +17,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for scope and design choices, a
 
 ### Commit graph
 - Virtualised commit graph with its own lane layout, in a rich (avatars) or compact style
+- Older commits load as you scroll to the end, down to the first commit; picking a branch whose tip is further back loads up to it
 - Optional author, date, SHA, changes and description columns, with resizable widths
 - Search by message, author or SHA, plus `path:` and `content:` filters that search the history
 - Hide or solo branches, and save the result as named view presets

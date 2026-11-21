@@ -172,6 +172,32 @@ async fn opens_commits_logs_and_lists_refs() {
     assert!(err.contains("Not a git repository"), "{err}");
 }
 
+/// The graph pages through history by asking for more commits; fewer than asked means the root was reached.
+#[tokio::test]
+async fn log_pages_with_limit_and_skip() {
+    let (svc, _d, repo) = setup().await;
+    for i in 1..=5 {
+        commit_file(&repo, "f.txt", &format!("{i}\n"), &format!("c{i}")).await;
+    }
+    sh(&repo, &["checkout", "-q", "-b", "side", "HEAD~2"]).await;
+    commit_file(&repo, "g.txt", "side\n", "s1").await;
+    sh(&repo, &["checkout", "-q", "main"]).await;
+
+    let page = |limit: u32, skip: Option<u32>| LogOptions { limit: Some(limit), skip, ..Default::default() };
+    let all = svc.log(&repo, page(100, None)).await.unwrap();
+    assert_eq!(all.len(), 6, "every branch is in the graph, fewer than asked: end of history");
+    assert_eq!(all.last().map(|c| c.summary.as_str()), Some("c1"));
+
+    let first = svc.log(&repo, page(4, None)).await.unwrap();
+    assert_eq!(first.len(), 4);
+    assert_eq!(summaries(&first), summaries(&all[..4]));
+    let rest = svc.log(&repo, page(4, Some(4))).await.unwrap();
+    assert_eq!(summaries(&rest), summaries(&all[4..]));
+    // exactly as many as asked: the renderer asks once more and gets fewer
+    assert_eq!(svc.log(&repo, page(6, None)).await.unwrap().len(), 6);
+    assert_eq!(svc.log(&repo, page(6, Some(6))).await.unwrap(), vec![]);
+}
+
 #[tokio::test]
 async fn amends_and_searches_commits() {
     let (svc, _d, repo) = setup().await;

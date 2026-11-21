@@ -20,6 +20,7 @@ import { AvatarHostProvider, useAuthorAvatars } from './authorAvatars'
 import { SearchBox, useCommitSearch } from './SearchBox'
 import { BehindBanner } from './BehindBanner'
 import { DelayedGraphSkeleton } from '../ui/Skeleton'
+import { shouldLoadMore } from '../state/logPaging'
 import './graph.css'
 
 const OVERSCAN = 12
@@ -38,6 +39,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
   const setPrefs = useStore((s) => s.setPrefs)
   const select = useStore((s) => s.select)
   const updateRepo = useStore((s) => s.updateRepo)
+  const loadMoreCommits = useStore((s) => s.loadMoreCommits)
   const m = useMemo(() => metrics(prefs.graphMode, rowHeight(prefs.density)), [prefs.graphMode, prefs.density])
   const ROW_H = m.rowH
 
@@ -82,7 +84,7 @@ export function Graph({ repo }: { repo: RepoTab }) {
   // ---- filter / search -------------------------------------------------------------------
   const [query, setQuery] = useState('')
   const filterRef = useRef<HTMLInputElement>(null)
-  const { matches, highlight: q, pending: searching, errors: searchErrors } = useCommitSearch(repo, query, layout.rows, prefs.commitLimit)
+  const { matches, highlight: q, pending: searching, errors: searchErrors } = useCommitSearch(repo, query, layout.rows)
 
   // ---- branch highlight while hovering a ref label --------------------------------------
   const [hoverRef, setHoverRef] = useState<Ref | null>(null)
@@ -344,6 +346,22 @@ export function Graph({ repo }: { repo: RepoTab }) {
   }, [first, last, layout.rows])
   const avatarHost = useAuthorAvatars(repo.path, visibleCommits, prefs.showAvatars)
 
+  // ---- older commits ---------------------------------------------------------------------
+  // scrolling near the end loads the next page; a page that added no visible row (a solo or hide filter) stops
+  // that until the user asks with the footer button
+  const rowsAtLastLoad = useRef<{ path: string; rows: number } | null>(null)
+  const rowCount = layout.rows.length
+  const lastOnScreen = Math.ceil((scrollTop + viewH) / ROW_H)
+  const loadMore = useCallback(() => {
+    rowsAtLastLoad.current = { path: repo.path, rows: rowCount }
+    void loadMoreCommits(repo.path)
+  }, [loadMoreCommits, repo.path, rowCount])
+  useEffect(() => {
+    const at = rowsAtLastLoad.current?.path === repo.path ? rowsAtLastLoad.current.rows : null
+    const state = { lastVisible: lastOnScreen, rowCount, complete: repo.historyComplete, loading: repo.loadingMore, rowsAtLastLoad: at }
+    if (!repo.error && shouldLoadMore(state)) loadMore()
+  }, [lastOnScreen, rowCount, repo.historyComplete, repo.loadingMore, repo.error, repo.path, loadMore])
+
   const visibleRows: ReactNode[] = []
   for (let i = first; i < last; i++) {
     const row = layout.rows[i]
@@ -455,6 +473,19 @@ export function Graph({ repo }: { repo: RepoTab }) {
         <div className={`graph-rows ${highlight ? 'highlighting' : ''}`} style={{ height: layout.rows.length * ROW_H, minWidth: minColsWidth + tail }}>
           <AvatarHostProvider value={avatarHost}>{visibleRows}</AvatarHostProvider>
         </div>
+        {rowCount > 0 && !repo.error && (
+          <div className="graph-footer" style={{ minWidth: minColsWidth + tail }}>
+            {repo.loadingMore ? (
+              'Loading more commits…'
+            ) : repo.historyComplete ? (
+              'Beginning of history'
+            ) : (
+              <button className="btn ghost small" onClick={loadMore}>
+                Load more commits
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -12,6 +12,8 @@
 .graph-scroll:focus-visible .g-row.selected { box-shadow: inset 0 0 0 2px var(--accent); }
 .graph-empty { padding: 40px; text-align: center; color: var(--text-secondary); }
 .graph-empty.error { color: var(--danger); white-space: pre-wrap; user-select: text; }
+/* end of the loaded history: loading, a button for the next page, or the first commit */
+.graph-footer { height: 36px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text-secondary); }
 
 /* ---- header ------------------------------------------------------------------------------ */
 .graph-head { flex: none; display: flex; }

@@ -255,7 +255,7 @@ export function PreferencesModal() {
               <Field label="Default branch name" hint="Used when initializing new repositories.">
                 {text('defaultBranchName', 'main')}
               </Field>
-              <Field label="Commits loaded in graph" hint="Larger values may slow down very big repositories.">
+              <Field label="Commits loaded at first" hint="The graph loads this many more each time you scroll to its end. Larger values may slow down very big repositories.">
                 {num('commitLimit', 100, 100000)}
               </Field>
               {check('rememberTabs', 'Reopen tabs on startup')}

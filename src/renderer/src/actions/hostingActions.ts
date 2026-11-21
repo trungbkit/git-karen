@@ -50,7 +50,10 @@ export function revealPullRequest(repo: RepoTab, pr: PullRequest): boolean {
   const s = useStore.getState()
   if (repo.center.kind !== 'graph') s.setCenter({ kind: 'graph' })
   s.select({ kind: 'commit', shas: [ref.sha] })
-  scrollToSha(ref.sha)
+  // older than the commits loaded so far: load more until it is there, then scroll once the graph laid it out
+  if (!scrollToSha(ref.sha)) {
+    void s.loadCommitsUntil(ref.sha, repo.path).then((found) => found && setTimeout(() => scrollToSha(ref.sha), 50))
+  }
   return true
 }
 
