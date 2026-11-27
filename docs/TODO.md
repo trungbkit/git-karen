@@ -15,6 +15,7 @@ Each feature below has unit or integration tests, but nobody has clicked through
 - The file watcher on Linux (one inotify watch per folder that is not ignored), and the "Automatic refresh is off" toast after lowering `fs.inotify.max_user_watches`.
 - AI keys in the keychain: save a key in Preferences > AI and check `ai.json` no longer holds it; upgrade from a build that kept keys in `ai.json` and check AI still works and the file loses the keys; on Linux without a Secret Service, check the "saved in a file" warning. After an update of an ad-hoc signed macOS build, see whether the keychain asks again before reading the key.
 - Undo toasts for each dangerous action.
+- Graph context menus: Reset the current branch to a branch, remote branch or tag (soft, mixed, hard); Copy commit sha on branches and tags; Merge, Rebase, Create worktree and Solo on a tag; Create tag on a remote branch; on a commit, Compare with the default and current branch, Merge into the current branch, and Move branch here (and its undo).
 - Keyboard-only hunk staging, and the stage → commit → push flow without a mouse.
 - Compare view (two commits; branch against the default branch).
 - Image diff in all three modes.

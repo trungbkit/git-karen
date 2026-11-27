@@ -263,6 +263,7 @@ impl GitService {
                         ret!(self.delete_remote_branches(r, &a.get::<String>(1)?, a.get(2)?))
                     }
                     "renameBranch" => ret!(self.rename_branch(r, &a.get::<String>(1)?, &a.get::<String>(2)?)),
+                    "moveBranch" => ret!(self.move_branch(r, &a.get::<String>(1)?, &a.get::<String>(2)?, &a.get::<String>(3)?)),
                     "checkout" => ret!(self.checkout(r, &a.get::<String>(1)?)),
                     "checkoutRemote" => ret!(self.checkout_remote(r, &a.get::<String>(1)?, a.get(2)?)),
                     "setUpstream" => ret!(self.set_upstream(r, &a.get::<String>(1)?, &a.get::<String>(2)?)),
@@ -1121,6 +1122,26 @@ impl GitService {
         branch_name(new)?;
         let _g = self.lock(repo).await;
         self.write(repo, args!["branch", "-m", old, new]).await?;
+        Ok(())
+    }
+
+    /// Point a branch at another commit without touching any work tree. Refuses a branch checked out in any
+    /// worktree (moving it would leave that worktree's index and files behind), and one that no longer points
+    /// at `from`, so a stale menu or a late undo cannot overwrite a move made since.
+    pub async fn move_branch(&self, repo: &str, name: &str, sha: &str, from: &str) -> Res<()> {
+        let name = branch_name(name)?;
+        let sha = rev_arg(sha)?;
+        let from = rev_arg(from)?;
+        let target = format!("refs/heads/{name}");
+        let _g = self.lock(repo).await;
+        let worktrees = self.out(repo, args!["worktree", "list", "--porcelain"]).await?;
+        if worktrees.lines().any(|l| l.strip_prefix("branch ") == Some(target.as_str())) {
+            return Err(format!("{name} is checked out in a worktree. Check out another branch there first."));
+        }
+        let commit = self.out(repo, args!["rev-parse", "--verify", "-q", format!("{sha}^{{commit}}")]).await?;
+        let commit = commit.trim();
+        let msg = format!("Karen: move {name} to {}", &commit[..commit.len().min(7)]);
+        self.write(repo, args!["update-ref", "-m", msg, target, commit, from]).await?;
         Ok(())
     }
 

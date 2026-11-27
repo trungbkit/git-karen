@@ -7,8 +7,8 @@ import { commitsBetween, isAncestor } from '../graph/layout'
 import { shortSha } from '../util/format'
 import { branchWorktreeItems, createWorktree, openWorktree, worktreeForBranch } from './worktreeActions'
 import { offerUndo, runRestorable } from './undo'
-import { deleteBranchImpact, forcePushImpact, resetImpact } from './impact'
-import { compareRefMenuItems, openCompare, orderedPair } from './compareActions'
+import { deleteBranchImpact, forcePushImpact, moveBranchImpact, resetImpact } from './impact'
+import { compareCommitMenuItems, compareRefMenuItems, openCompare, orderedPair } from './compareActions'
 import { summarizeWithAi } from './aiActions'
 import { dismissBehindNotice, noteFetched, upstreamTip } from '../state/autoFetch'
 import { refreshCleanupHint } from '../state/cleanupHints'
@@ -360,12 +360,12 @@ const RESET_MESSAGES = {
   hard: 'Moves the branch and discards all uncommitted changes to tracked files.'
 }
 
-/** Reset the current branch after a confirmation listing what it changes; the undo moves it back. */
-export async function resetTo(sha: string, mode: 'soft' | 'mixed' | 'hard', branch: string) {
+/** Reset the current branch after a confirmation listing what it changes; the undo moves it back. `target` names `sha` (a branch or tag). */
+export async function resetTo(sha: string, mode: 'soft' | 'mixed' | 'hard', branch: string, target = shortSha(sha)) {
   const repo = store().repos[store().activeTab]
   if (!repo) return
   const verb = `${mode[0].toUpperCase()}${mode.slice(1)} reset`
-  const ok = await confirm(`${verb} ${branch} to ${shortSha(sha)}?`, RESET_MESSAGES[mode], {
+  const ok = await confirm(`${verb} ${branch} to ${target}?`, RESET_MESSAGES[mode], {
     danger: mode === 'hard',
     confirmLabel: verb,
     impact: resetImpact(repo, sha, mode, branch)
@@ -389,8 +389,38 @@ export async function resetTo(sha: string, mode: 'soft' | 'mixed' | 'hard', bran
       await git().reset(r, old, mode)
       if (snapshot) await git().applySnapshot(r, snapshot)
     },
-    { title: `${branch} reset to ${shortSha(sha)}` }
+    { title: `${branch} reset to ${target}` }
   )
+}
+
+/** "Reset <current branch> to …" with its soft / mixed / hard submenu. */
+function resetMenuItem(repo: RepoTab, sha: string, label: string, target?: string): MenuItem {
+  const branch = currentBranch(repo) ?? 'HEAD'
+  return {
+    label,
+    disabled: !headSha(repo) || headSha(repo) === sha,
+    submenu: [
+      { label: 'Soft — keep all changes staged', onClick: () => void resetTo(sha, 'soft', branch, target) },
+      { label: 'Mixed — keep working copy, reset index', onClick: () => void resetTo(sha, 'mixed', branch, target) },
+      { label: 'Hard — discard all changes', danger: true, onClick: () => void resetTo(sha, 'hard', branch, target) }
+    ]
+  }
+}
+
+/** Move a branch that no worktree has checked out to `sha`; the undo moves it back unless it moved again since. */
+async function moveBranch(repo: RepoTab, ref: Ref, sha: string) {
+  const ok = await confirm(`Move ${ref.name} to ${shortSha(sha)}?`, `${ref.name} points at ${shortSha(ref.sha)} now.`, {
+    confirmLabel: 'Move branch',
+    impact: moveBranchImpact(repo, ref.name, sha)
+  })
+  if (!ok) return
+  const before = ref.sha
+  if (await store().run(`Moving ${ref.name}`, (r) => git().moveBranch(r, ref.name, sha, before))) {
+    offerUndo(repo.path, `Move ${ref.name}`, (r) => git().moveBranch(r, ref.name, before, sha), {
+      title: `Moved ${ref.name} to ${shortSha(sha)}`,
+      message: `It pointed at ${shortSha(before)}`
+    })
+  }
 }
 
 async function renameBranch(ref: Ref) {
@@ -459,9 +489,9 @@ async function deleteRemoteBranch(repo: RepoTab, ref: Ref) {
   }
 }
 
-async function mergeIntoCurrent(repo: RepoTab, refName: string) {
+async function mergeIntoCurrent(repo: RepoTab, refName: string, label = refName) {
   const current = currentBranch(repo) ?? 'HEAD'
-  await runRestorable(`Merging ${refName}`, null, (r) => git().merge(r, refName), { success: `Merged ${refName} into ${current}`, undoLabel: `Merge into ${current}` })
+  await runRestorable(`Merging ${label}`, null, (r) => git().merge(r, refName), { success: `Merged ${label} into ${current}`, undoLabel: `Merge into ${current}` })
 }
 
 async function rebaseCurrentOnto(repo: RepoTab, refName: string) {
@@ -503,12 +533,15 @@ export function commitMenuItems(repo: RepoTab, sha: string): MenuItem[] {
   const isHead = head === sha
   const ancestorOfHead = head ? !isHead && isAncestor(repo.commits, sha, head) : false
   const localsHere = repo.refs.filter((r) => r.type === 'local' && r.sha === sha && !r.isHead)
+  // branches git can move without touching a working copy: not checked out here or in another worktree
+  const movable = repo.refs.filter((r) => r.type === 'local' && !r.isHead && r.sha !== sha && !worktreeForBranch(repo, r.name))
   const pair = repo.selection?.kind === 'commit' && repo.selection.shas.includes(sha) ? orderedPair(repo, repo.selection.shas) : null
 
   const selected = repo.selection?.kind === 'commit' && repo.selection.shas.includes(sha) ? repo.selection.shas : [sha]
 
   return [
     pair && { label: `Compare ${shortSha(pair[0])} and ${shortSha(pair[1])}`, onClick: () => openCompare(pair[0], pair[1]) },
+    ...compareCommitMenuItems(repo, sha),
     {
       label: selected.length > 1 ? `Summarize ${selected.length} commits with AI` : 'Summarize commit with AI',
       onClick: () => summarizeWithAi(repo, selected)
@@ -528,6 +561,11 @@ export function commitMenuItems(repo: RepoTab, sha: string): MenuItem[] {
       disabled: isHead || ancestorOfHead,
       onClick: () => void cherryPick(repo, [sha])
     },
+    !!currentBranch(repo) && {
+      label: `Merge ${shortSha(sha)} into ${branch}`,
+      disabled: isHead || ancestorOfHead,
+      onClick: () => void mergeIntoCurrent(repo, sha, shortSha(sha))
+    },
     {
       label: 'Revert commit',
       onClick: async () => {
@@ -535,14 +573,10 @@ export function commitMenuItems(repo: RepoTab, sha: string): MenuItem[] {
           await store().run('Reverting', (r) => git().revert(r, sha))
       }
     },
-    {
-      label: `Reset ${branch} to this commit`,
-      disabled: isHead,
-      submenu: [
-        { label: 'Soft — keep all changes staged', onClick: () => void resetTo(sha, 'soft', branch) },
-        { label: 'Mixed — keep working copy, reset index', onClick: () => void resetTo(sha, 'mixed', branch) },
-        { label: 'Hard — discard all changes', danger: true, onClick: () => void resetTo(sha, 'hard', branch) }
-      ]
+    resetMenuItem(repo, sha, `Reset ${branch} to this commit`),
+    movable.length > 0 && {
+      label: 'Move branch here',
+      submenu: movable.map((ref) => ({ label: ref.name, onClick: () => void moveBranch(repo, ref, sha) }))
     },
     {
       label: `Interactive rebase ${branch} children of ${shortSha(sha)}`,
@@ -574,7 +608,9 @@ export function branchMenuItems(repo: RepoTab, ref: Ref): MenuItem[] {
       !!current && { label: `Rebase ${current} onto ${ref.name}`, onClick: () => void rebaseCurrentOnto(repo, ref.name) },
       !!current && canInteractive && { label: `Interactive rebase ${current} onto ${ref.name}`, onClick: () => startInteractiveRebase(repo, ref.sha) },
       ...compareRefMenuItems(repo, ref),
+      resetMenuItem(repo, ref.sha, `Reset ${current ?? 'HEAD'} to ${ref.name}`, ref.name),
       { label: `Create branch here`, onClick: () => void createBranchAt(ref.sha) },
+      { label: 'Create tag here', onClick: () => void createTagAt(ref.sha) },
       { label: `Create worktree from ${ref.name}…`, onClick: () => createWorktree(ref.name) },
       'separator',
       { label: `Fetch ${ref.remote ?? 'remote'}`, onClick: () => void s.run('Fetching', (r) => git().fetch(r, ref.remote, true)) },
@@ -582,6 +618,7 @@ export function branchMenuItems(repo: RepoTab, ref: Ref): MenuItem[] {
       { label: soloed ? 'Unsolo' : 'Solo', onClick: () => s.toggleSolo(ref.fullName) },
       'separator',
       { label: 'Copy branch name', onClick: () => copyText(ref.name) },
+      { label: 'Copy commit sha', onClick: () => copyText(ref.sha, 'Commit sha copied') },
       { label: `Delete ${ref.name}`, danger: true, onClick: () => void deleteRemoteBranch(repo, ref) }
     ]
   }
@@ -613,6 +650,7 @@ export function branchMenuItems(repo: RepoTab, ref: Ref): MenuItem[] {
     !isCurrent && !!current && { label: `Merge ${ref.name} into ${current}`, onClick: () => void mergeIntoCurrent(repo, ref.name) },
     !isCurrent && !!current && { label: `Rebase ${current} onto ${ref.name}`, onClick: () => void rebaseCurrentOnto(repo, ref.name) },
     !isCurrent && !!current && canInteractive && { label: `Interactive rebase ${current} onto ${ref.name}`, onClick: () => startInteractiveRebase(repo, ref.sha) },
+    !isCurrent && resetMenuItem(repo, ref.sha, `Reset ${current ?? 'HEAD'} to ${ref.name}`, ref.name),
     ...compareRefMenuItems(repo, ref),
     flowKind && { label: `Gitflow: finish ${flowKind} ${ref.name.slice(GITFLOW_PREFIXES[flowKind].length)}`, onClick: () => void gitflowFinish(flowKind, ref.name.slice(GITFLOW_PREFIXES[flowKind].length)) },
     { label: 'Create branch here', onClick: () => void createBranchAt(ref.sha) },
@@ -623,6 +661,7 @@ export function branchMenuItems(repo: RepoTab, ref: Ref): MenuItem[] {
     { label: soloed ? 'Unsolo' : 'Solo', onClick: () => s.toggleSolo(ref.fullName) },
     'separator',
     { label: 'Copy branch name', onClick: () => copyText(ref.name) },
+    { label: 'Copy commit sha', onClick: () => copyText(ref.sha, 'Commit sha copied') },
     { label: `Rename ${ref.name}`, onClick: () => void renameBranch(ref) },
     wt ? branchWorktreeItems(repo, ref, wt)[1] : { label: `Delete ${ref.name}`, danger: true, disabled: isCurrent, onClick: () => void deleteLocalBranch(repo, ref) }
   ]
@@ -630,17 +669,28 @@ export function branchMenuItems(repo: RepoTab, ref: Ref): MenuItem[] {
 
 export function tagMenuItems(repo: RepoTab, ref: Ref): MenuItem[] {
   const s = store()
+  const current = currentBranch(repo)
+  const head = headSha(repo)
+  const inHead = head ? head === ref.sha || isAncestor(repo.commits, ref.sha, head) : false
   return [
     { label: `Checkout ${ref.name}`, onClick: () => void checkoutRef(repo, ref) },
-    { label: 'Create branch here', onClick: () => void createBranchAt(ref.sha) },
+    !!current && { label: `Merge ${ref.name} into ${current}`, disabled: inHead, onClick: () => void mergeIntoCurrent(repo, ref.name) },
+    !!current && { label: `Rebase ${current} onto ${ref.name}`, disabled: head === ref.sha, onClick: () => void rebaseCurrentOnto(repo, ref.name) },
+    !!current && inHead && head !== ref.sha && { label: `Interactive rebase ${current} onto ${ref.name}`, onClick: () => startInteractiveRebase(repo, ref.sha) },
+    resetMenuItem(repo, ref.sha, `Reset ${current ?? 'HEAD'} to ${ref.name}`, ref.name),
     ...compareRefMenuItems(repo, ref),
+    { label: 'Create branch here', onClick: () => void createBranchAt(ref.sha) },
+    { label: `Create worktree from ${ref.name}…`, onClick: () => createWorktree(ref.name) },
     'separator',
     repo.remotes.length > 0 && {
       label: 'Push tag to…',
       submenu: repo.remotes.map((rm) => ({ label: rm.name, onClick: () => void s.run('Pushing tag', (r) => git().pushTag(r, rm.name, ref.name)) }))
     },
     { label: repo.hiddenRefs.includes(ref.fullName) ? 'Show in graph' : 'Hide in graph', onClick: () => s.toggleHidden(ref.fullName) },
+    { label: repo.soloRefs.includes(ref.fullName) ? 'Unsolo' : 'Solo', onClick: () => s.toggleSolo(ref.fullName) },
+    'separator',
     { label: 'Copy tag name', onClick: () => copyText(ref.name) },
+    { label: 'Copy commit sha', onClick: () => copyText(ref.sha, 'Commit sha copied') },
     'separator',
     {
       label: `Delete ${ref.name} locally`,
@@ -688,15 +738,7 @@ export function reflogMenuItems(repo: RepoTab, sha: string): MenuItem[] {
   return [
     { label: 'Checkout this commit', disabled: sha === head, onClick: () => void checkoutDetached(sha) },
     { label: 'Create branch here', onClick: () => void createBranchAt(sha) },
-    {
-      label: `Reset ${branch} here`,
-      disabled: sha === head,
-      submenu: [
-        { label: 'Soft — keep all changes staged', onClick: () => void resetTo(sha, 'soft', branch) },
-        { label: 'Mixed — keep working copy, reset index', onClick: () => void resetTo(sha, 'mixed', branch) },
-        { label: 'Hard — discard all changes', danger: true, onClick: () => void resetTo(sha, 'hard', branch) }
-      ]
-    },
+    resetMenuItem(repo, sha, `Reset ${branch} here`),
     { label: 'Cherry pick commit', disabled: sha === head, onClick: () => void cherryPick(repo, [sha]) },
     'separator',
     { label: 'View in graph', disabled: !loaded, onClick: () => showInGraph(sha) },

@@ -34,11 +34,21 @@ export function defaultBranch(repo: RepoTab): string | null {
 
 /** "Compare with <default branch>" and "Compare with <current branch>" for a branch or tag. */
 export function compareRefMenuItems(repo: RepoTab, ref: Ref): MenuItem[] {
+  return compareWithItems(repo, ref.name)
+}
+
+/** The same entries for a commit; branches already pointing at it are left out. */
+export function compareCommitMenuItems(repo: RepoTab, sha: string): MenuItem[] {
+  const atSha = new Set(repo.refs.filter((r) => (r.type === 'local' || r.type === 'remote') && r.sha === sha).map((r) => r.name))
+  return compareWithItems(repo, sha, atSha)
+}
+
+function compareWithItems(repo: RepoTab, target: string, skip: Set<string> = new Set([target])): MenuItem[] {
   const def = defaultBranch(repo)
   const current = currentBranch(repo)
   const items: MenuItem[] = []
-  if (def && def !== ref.name) items.push({ label: `Compare with ${def}`, onClick: () => openCompare(def, ref.name) })
-  if (current && current !== def && current !== ref.name) items.push({ label: `Compare with ${current}`, onClick: () => openCompare(current, ref.name) })
+  if (def && def !== target && !skip.has(def)) items.push({ label: `Compare with ${def}`, onClick: () => openCompare(def, target) })
+  if (current && current !== def && current !== target && !skip.has(current)) items.push({ label: `Compare with ${current}`, onClick: () => openCompare(current, target) })
   return items
 }
 

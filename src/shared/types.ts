@@ -747,6 +747,8 @@ export interface GitApi {
   deleteBranches(repo: string, names: string[]): Promise<BranchDeletion[]>
   deleteRemoteBranches(repo: string, remote: string, names: string[]): Promise<void>
   renameBranch(repo: string, oldName: string, newName: string): Promise<void>
+  /** Point a branch that no worktree has checked out at `sha`; fails when it no longer points at `from`. */
+  moveBranch(repo: string, name: string, sha: string, from: string): Promise<void>
   checkout(repo: string, ref: string): Promise<void>
   /** Checkout a remote branch, creating a local tracking branch */
   checkoutRemote(repo: string, remoteRef: string, localName?: string): Promise<void>

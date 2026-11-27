@@ -399,6 +399,37 @@ async fn renames_and_deletes_branches_tags() {
 }
 
 #[tokio::test]
+async fn moves_branches_no_worktree_has_checked_out() {
+    let (svc, _d, repo) = setup().await;
+    let a = commit_file(&repo, "f", "a\n", "a").await;
+    let b = commit_file(&repo, "f", "b\n", "b").await;
+    svc.create_branch(&repo, "side", Some(a.clone()), false).await.unwrap();
+    write_file(&repo, "f", "dirty\n");
+
+    svc.move_branch(&repo, "side", &b, &a).await.unwrap();
+    assert_eq!(svc.resolve_ref(&repo, "refs/heads/side").await.unwrap(), Some(b.clone()));
+    assert_eq!(read_file(&repo, "f"), "dirty\n");
+    assert_eq!(sh(&repo, &["reflog", "-1", "--format=%gs", "side"]).await.trim(), format!("Karen: move side to {}", &b[..7]));
+    // the branch is no longer at `from`: a stale menu or undo must not overwrite it
+    assert!(svc.move_branch(&repo, "side", &a, &a).await.is_err());
+    assert_eq!(svc.resolve_ref(&repo, "refs/heads/side").await.unwrap(), Some(b.clone()));
+    svc.move_branch(&repo, "side", &a, &b).await.unwrap();
+    assert_eq!(svc.resolve_ref(&repo, "refs/heads/side").await.unwrap(), Some(a.clone()));
+
+    // the checked-out branch, here or in another worktree, is refused
+    let err = svc.move_branch(&repo, "main", &a, &b).await.unwrap_err();
+    assert!(err.contains("main is checked out in a worktree"), "{err}");
+    let (_wd, parent) = temp_dir("karen-wt-");
+    let wt_path = join(&parent, "wt").to_string_lossy().into_owned();
+    svc.worktree_add(&repo, &wt_path, "side", None, false).await.unwrap();
+    assert!(svc.move_branch(&repo, "side", &b, &a).await.is_err());
+    assert_eq!(svc.resolve_ref(&repo, "refs/heads/side").await.unwrap(), Some(a.clone()));
+    // nor can it point at something that is not a commit
+    svc.create_branch(&repo, "other", Some(a.clone()), false).await.unwrap();
+    assert!(svc.move_branch(&repo, "other", "nope", &a).await.is_err());
+}
+
+#[tokio::test]
 async fn works_with_remotes_fetch_checkout_remote_push_pull() {
     let (svc, _d, repo) = setup().await;
     commit_file(&repo, "a", "a\n", "a").await;

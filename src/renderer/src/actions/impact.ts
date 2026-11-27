@@ -39,6 +39,17 @@ export async function resetImpact(repo: RepoTab, sha: string, mode: 'soft' | 'mi
   return out
 }
 
+/** Moving a branch that is not checked out: commits it leaves and gains. */
+export async function moveBranchImpact(repo: RepoTab, branch: string, sha: string): Promise<ImpactLine[]> {
+  const rev = `refs/heads/${branch}`
+  const [leaving, arriving] = await Promise.all([git().countCommits(repo.path, rev, [sha]), git().countCommits(repo.path, sha, [rev])])
+  const out: ImpactLine[] = []
+  if (leaving > 0) out.push({ text: `${count(leaving, 'commit')} will leave ${branch} (still in the reflog)`, tone: 'danger' })
+  if (arriving > 0) out.push({ text: `${count(arriving, 'commit')} not on ${branch} yet will be added to it` })
+  out.push({ text: 'The working copy is not touched', tone: 'muted' })
+  return out
+}
+
 export async function deleteBranchImpact(repo: RepoTab, branch: string, current: string | null): Promise<ImpactLine[]> {
   const { unmerged, orphaned } = await git().branchImpact(repo.path, branch)
   const into = current ?? 'HEAD'
